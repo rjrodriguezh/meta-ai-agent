@@ -1,0 +1,43 @@
+# Secrets
+.env
+*.env
+
+# Python
+venv/
+*/venv/
+__pycache__/
+*/__pycache__/
+**/__pycache__/
+*.pyc
+
+# Bases de datos — contienen datos reales de pacientes (fichas, teléfonos, diagnósticos)
+*.db
+*.db-journal
+*/*.db
+
+# Uploads de pacientes — datos sensibles (fichas, órdenes médicas, fotos)
+uploads/
+*/uploads/
+
+# Respaldo del sistema anterior en Python
+old/
+
+# Binarios compilados de Go
+ai-service/ai-service
+patients-service/patients-service
+agenda-service/agenda-service
+activities-service/activities-service
+whatsapp-service/whatsapp-service
+calendar-service/calendar-service
+
+# Tests / reportes locales
+tests/results/
+tests/reports/
+tests/.pytest_cache/
+
+# Caddy (certificados y estado local — se regeneran en el server)
+caddy_data/
+
+# OS
+.DS_Store
+Thumbs.db

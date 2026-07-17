@@ -1,0 +1,157 @@
+# Levanta los 4 microservicios Go juntos.
+# Uso: docker-compose up --build
+#
+# Para desarrollo local sin Docker, corre cada servicio por separado:
+#   cd patients-service && go run main.go
+#   cd agenda-service   && go run main.go
+#   cd ai-service       && go run main.go
+#   cd whatsapp-service && go run main.go
+
+services:
+
+  patients-service:
+    build: ./patients-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8083:8083"
+    environment:
+      - PATIENTS_PORT=8083
+      - DB_PATH=/app/agenda.db
+    volumes:
+      - ./agenda.db:/app/agenda.db
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8083/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  agenda-service:
+    build: ./agenda-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      - AGENDA_PORT=8082
+      - DB_PATH=/app/agenda.db
+    volumes:
+      - ./agenda.db:/app/agenda.db
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8082/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  ai-service:
+    build: ./ai-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8081:8081"
+    environment:
+      - AI_PORT=8081
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - PATIENTS_SERVICE_URL=http://patients-service:8083
+      - AGENDA_SERVICE_URL=http://agenda-service:8082
+      - CALENDAR_SERVICE_URL=http://calendar-service:8085
+      - DASHBOARD_SERVICE_URL=http://dashboard-service:5000
+      - CLINIC_LOCATION=${CLINIC_LOCATION:-Clínica de Kinesiología Felipe Castillo}
+      - DB_PATH=/app/agenda.db
+    volumes:
+      - ./agenda.db:/app/agenda.db
+    depends_on:
+      patients-service:
+        condition: service_healthy
+      agenda-service:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8081/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  whatsapp-service:
+    build: ./whatsapp-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8080:8080"
+    environment:
+      - WHATSAPP_PORT=8080
+      - META_VERIFY_TOKEN=${META_VERIFY_TOKEN}
+      - META_ACCESS_TOKEN=${META_ACCESS_TOKEN}
+      - PHONE_NUMBER_ID=${PHONE_NUMBER_ID}
+      - AI_SERVICE_URL=http://ai-service:8081
+    depends_on:
+      ai-service:
+        condition: service_healthy
+
+  activities-service:
+    build: ./activities-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8084:8084"
+    environment:
+      - ACTIVITIES_PORT=8084
+      - DB_PATH=/app/data/activities.db
+    volumes:
+      - activities_data:/app/data
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:8084/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  calendar-service:
+    build: ./calendar-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8085:8085"
+    environment:
+      - GOOGLE_CALENDAR_ID=${GOOGLE_CALENDAR_ID:-primary}
+      - GOOGLE_SERVICE_ACCOUNT_JSON=${GOOGLE_SERVICE_ACCOUNT_JSON:-}
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8085/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  dashboard-service:
+    build: ./dashboard-service
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:5000:5000"
+    environment:
+      - PATIENTS_SERVICE_URL=http://patients-service:8083
+      - AGENDA_SERVICE_URL=http://agenda-service:8082
+      - AI_SERVICE_URL=http://ai-service:8081
+      - ACTIVITIES_SERVICE_URL=http://activities-service:8084
+      - CALENDAR_SERVICE_URL=http://calendar-service:8085
+      - CLINIC_LOCATION=${CLINIC_LOCATION:-Clínica de Kinesiología Felipe Castillo}
+      - SMTP_HOST=${SMTP_HOST:-smtp.gmail.com}
+      - SMTP_PORT=${SMTP_PORT:-587}
+      - SMTP_USER=${SMTP_USER:-}
+      - SMTP_PASS=${SMTP_PASS:-}
+      - FROM_EMAIL=${FROM_EMAIL:-}
+      - EMAIL_ENABLED=${EMAIL_ENABLED:-false}
+    volumes:
+      - fichas_uploads:/app/uploads
+    depends_on:
+      patients-service:
+        condition: service_healthy
+      agenda-service:
+        condition: service_healthy
+
+# Para migrar a PostgreSQL en el futuro, descomenta esto:
+#  postgres:
+#    image: postgres:16-alpine
+#    environment:
+#      POSTGRES_USER: kine
+#      POSTGRES_PASSWORD: kine123
+#      POSTGRES_DB: kinedb
+#    ports:
+#      - "5432:5432"
+#    volumes:
+#      - pgdata:/var/lib/postgresql/data
+#
+volumes:
+  activities_data:
+  fichas_uploads:
+#  pgdata:

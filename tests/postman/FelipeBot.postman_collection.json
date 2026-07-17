@@ -1,0 +1,331 @@
+{
+  "info": {
+    "name": "Bot Felipe Castillo - QA Suite",
+    "description": "Suite de pruebas automatizadas para el bot de WhatsApp del Kinesiólogo Felipe Castillo.\nCubre: precios, FONASA, diagnósticos, servicios no disponibles, agendamiento y cancelación.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "felipe-bot-qa-v1"
+  },
+  "variable": [
+    { "key": "AI_URL", "value": "http://localhost:8081" },
+    { "key": "PHONE", "value": "56900000099" }
+  ],
+  "item": [
+    {
+      "name": "💰 Precios y Tarifas",
+      "item": [
+        {
+          "name": "Cuánto vale la sesión",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Cuánto vale la sesión?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Menciona precio $10.000', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/10[.,]?000|diez/);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Valor particular",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Valor particular por favor\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Responde con precio', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/10[.,]?000|diez/);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Cuánto salen 5 sesiones",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Cuánto salen 5 sesiones?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Indica que no hay promo de 5', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('10') || s.includes('promo') || s.includes('solo'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Programa de 10 sesiones ($37.000)",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"El bono vale $37.000\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Aclara que es programa de 10 sesiones', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('10') || s.includes('programa') || s.includes('37'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "No bonos online",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Aceptan bonos online?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Indica que no acepta bonos online', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('no') || s.includes('santiago') || s.includes('presencial'));",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "🏥 FONASA y Orden Médica",
+      "item": [
+        {
+          "name": "Tiene orden médica",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Sí, tengo orden médica\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Pregunta por diagnóstico', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('diagnóstico') || s.includes('diagnostico'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "No tiene orden médica",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"No tengo orden médica\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Indica que consiga orden con médico', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('médico') || s.includes('medico') || s.includes('orden'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Horario FONASA",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Hasta qué hora atienden FONASA?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Menciona horario FONASA (2pm o 14:00)', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('2pm') || s.includes('14') || s.includes('lunes'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Diagnóstico bilateral",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Tengo dolor en rodilla derecha y hombro izquierdo\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Deriva a Felipe personalmente (bilateral)', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('felipe') || s.includes('personalmente') || s.includes('contacta'));",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "🚫 Servicios No Disponibles",
+      "item": [
+        {
+          "name": "Masajes post liposucción",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Necesito masajes post operatorio de liposucción\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Rechaza: No lo hacemos', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('no lo hacemos') || s.includes('no realizamos') || s.includes('no hacemos'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Piso pélvico",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Hacen ejercicios para piso pélvico?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Rechaza servicio no disponible', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('no') || s.includes('hacemos'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Cicatrices",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Tratan cicatrices?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Rechaza tratamiento de cicatrices', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('no') || s.includes('hacemos'));",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "📅 Agendamiento y Cancelación",
+      "item": [
+        {
+          "name": "Quiero agendar",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Quiero agendar una hora\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Responde y continúa flujo', function() {",
+            "  pm.response.to.have.status(200);",
+            "  const r = pm.response.json().respuesta;",
+            "  pm.expect(r.length).to.be.above(5);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Ya compré los bonos",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Ya compré los bonos\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Reconoce que tiene bono', function() {",
+            "  pm.response.to.have.status(200);",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('ok') || s.includes('nombre') || s.includes('mañana') || s.includes('empezar'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Dirección clínica",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¿Dónde queda la clínica?\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Da la dirección', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('san antonio') || s.includes('418') || s.includes('piso 3'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Cancelar cita",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Hoy no puedo asistir a mi cita\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Maneja cancelación y ofrece reagendar', function() {",
+            "  pm.response.to.have.status(200);",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r.length).to.be.above(5);",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "👋 Saludos",
+      "item": [
+        {
+          "name": "Hola",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"Hola\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Responde saludo', function() {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.satisfy(s => s.includes('hola') || s.includes('buenos') || s.includes('diga'));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Lead Meta: quiero más información",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\"numero\": \"{{PHONE}}\", \"mensaje\": \"¡Hola! Quiero más información\"}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Responde lead correctamente', function() {",
+            "  pm.response.to.have.status(200);",
+            "  const r = pm.response.json().respuesta;",
+            "  pm.expect(r.length).to.be.above(10);",
+            "});"
+          ]}}]
+        }
+      ]
+    },
+    {
+      "name": "🔧 Health Check",
+      "item": [
+        {
+          "name": "ai-service /health",
+          "request": {
+            "method": "GET",
+            "url": "{{AI_URL}}/health"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('ai-service está activo', function() {",
+            "  pm.response.to.have.status(200);",
+            "  pm.expect(pm.response.json().status).to.eql('ok');",
+            "});"
+          ]}}]
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,30 @@
+# docker-compose.test.yml — Override para pruebas automatizadas
+#
+# Uso:
+#   docker compose -f docker-compose.yml -f docker-compose.test.yml up -d --build
+#
+# Qué hace distinto al compose base:
+#   - patients-service y agenda-service usan DB_PATH=/app/testdata/test.db
+#   - El volumen "test_db" se monta como DIRECTORIO en /app/testdata/ (los
+#     named volumes en Docker son directorios, no archivos — SQLite crea el
+#     archivo .db dentro del directorio automáticamente)
+#   - Al borrar el volumen antes de correr, la BD siempre empieza vacía
+#
+# La BD de producción (agenda.db) nunca se toca.
+
+services:
+
+  patients-service:
+    environment:
+      - DB_PATH=/app/testdata/test.db
+    volumes:
+      - test_db:/app/testdata
+
+  agenda-service:
+    environment:
+      - DB_PATH=/app/testdata/test.db
+    volumes:
+      - test_db:/app/testdata
+
+volumes:
+  test_db:

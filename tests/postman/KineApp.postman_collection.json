@@ -1,0 +1,1194 @@
+{
+  "info": {
+    "name": "KineApp — Suite Completa",
+    "description": "Cubre patients-service, agenda-service, calendar-service, dashboard-service y ai-service (bot WhatsApp). Usa variables de colección para las URLs base.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json",
+    "_postman_id": "kineapp-full-suite-v2"
+  },
+  "variable": [
+    { "key": "PATIENTS_URL",  "value": "http://localhost:8083" },
+    { "key": "AGENDA_URL",    "value": "http://localhost:8082" },
+    { "key": "CALENDAR_URL",  "value": "http://localhost:8085" },
+    { "key": "DASHBOARD_URL", "value": "http://localhost:5000" },
+    { "key": "AI_URL",        "value": "http://localhost:8081" },
+    { "key": "PHONE",         "value": "56977890844" },
+    { "key": "pac_id",        "value": "1" },
+    { "key": "fic_id",        "value": "1" },
+    { "key": "agen_id",       "value": "1" },
+    { "key": "cal_event_id",  "value": "" },
+    { "key": "pac_telefono",  "value": "" },
+    { "key": "e2e_phone",     "value": "" }
+  ],
+  "item": [
+
+    {
+      "name": "⚙ Setup — Inicializar BD de test",
+      "description": "Carga el bot persona de Felipe en patients-service antes de cualquier test de bot. Ejecutar siempre primero.",
+      "item": [
+        {
+          "name": "Setup: Cargar bot persona de Felipe",
+          "request": {
+            "method": "PUT",
+            "url": "{{PATIENTS_URL}}/config/bot",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"persona\": \"Eres el asistente de WhatsApp de la Clínica de Kinesiología de Felipe Castillo, ubicada en San Antonio 418, piso 3, oficina 306, entre Monjitas y Merced, Santiago Centro.\\n\\nSERVICIOS Y PRECIOS:\\n- Atención kinesiológica grupal (máx. 3 pacientes simultáneos, NO es individual)\\n- Valor particular: $10.000 CLP por sesión\\n- Paquete promocional: 10 sesiones (no existe paquete de 5)\\n- Se acepta FONASA con orden médica, nivel 1 únicamente\\n- Los bonos FONASA se deben comprar antes de las 14:00 hrs (lunes a viernes)\\n- NO se aceptan bonos online ni de otras regiones; solo presencial Santiago Centro\\n\\nSERVICIOS QUE NO REALIZAMOS:\\n- Masajes post operatorios (post lipo, post cirugía estética)\\n- Ejercicios de piso pélvico\\n- Kinesiología a domicilio\\n- Atención por videollamada\\n\\nHORARIOS DE ATENCIÓN:\\n- Lunes a viernes: 8:00 a 20:00 hrs\\n- Sábados: 9:00 a 14:00 hrs\\n- Domingos: cerrado\\n\\nDIAGNÓSTICOS BILATERALES:\\n- Si el paciente menciona dolor o lesiones en DOS zonas distintas del cuerpo (ej: ambas rodillas, hombro izquierdo y tobillo derecho), responde SIEMPRE: \\\"Ese caso requiere una evaluación personalizada. Te paso con Felipe para que coordinen directamente 🙏\\\".\\n\\nPROCESO DE AGENDAMIENTO:\\n- No es necesario venir antes de la primera sesión; todo se coordina por WhatsApp\\n- Pacientes FONASA deben tener orden médica antes de la primera sesión\\n- Llevar zapatillas y ropa cómoda a cada sesión\\n- La atención se coordina por WhatsApp; no hay visita previa al kinesiólogo\\n\\nESTILO DE RESPUESTA:\\n- Breve, directa y amable, como lo haría Felipe\\n- Usa emojis con moderación\\n- No inventes información no listada aquí; si no sabes, deriva a Felipe\",\n  \"activo\": true\n}"
+            }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Bot persona cargada', () => pm.response.to.have.status(200));",
+            "pm.test('Persona activa', () => pm.expect(pm.response.json().activo).to.be.true);",
+            "console.log('✅ Bot persona de Felipe cargada correctamente.');"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "🟢 Health Checks",
+      "item": [
+        {
+          "name": "patients-service /health",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('ok', () => pm.expect(pm.response.json().status).to.eql('ok'));"
+          ]}}]
+        },
+        {
+          "name": "agenda-service /health",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "calendar-service /health",
+          "request": { "method": "GET", "url": "{{CALENDAR_URL}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "dashboard-service /health",
+          "request": { "method": "GET", "url": "{{DASHBOARD_URL}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "ai-service /health",
+          "request": { "method": "GET", "url": "{{AI_URL}}/health" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "👤 Patients Service",
+      "item": [
+        {
+          "name": "Listar todos los pacientes",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/patients" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Es array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ]}}]
+        },
+        {
+          "name": "Crear paciente",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Teléfono dinámico para evitar duplicados entre ejecuciones",
+                "const phone = '569' + Date.now().toString().slice(-8);",
+                "pm.collectionVariables.set('pac_telefono', phone);"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200 o 201', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+                "const j = pm.response.json();",
+                "pm.test('Tiene pac_id', () => pm.expect(j).to.have.property('pac_id'));",
+                "if (j.pac_id) pm.collectionVariables.set('pac_id', j.pac_id);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{PATIENTS_URL}}/patients",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombres\": \"Juan\",\n  \"apellidos\": \"Perez Test\",\n  \"telefono\": \"{{pac_telefono}}\",\n  \"nombre_corto\": \"Juan Perez\",\n  \"email\": \"juan@test.com\",\n  \"direccion\": \"Calle Test 123\",\n  \"ciudad\": \"Santiago\",\n  \"comuna\": \"Centro\"\n}" }
+          }
+        },
+        {
+          "name": "Obtener paciente por ID",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/patients/{{pac_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Tiene nombre_corto', () => pm.expect(pm.response.json()).to.have.property('pac_nombre_corto'));"
+          ]}}]
+        },
+        {
+          "name": "Obtener paciente por teléfono",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/patients/telefono/{{pac_telefono}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Teléfono coincide', () => pm.expect(pm.response.json().pac_telefono).to.eql(pm.collectionVariables.get('pac_telefono')));"
+          ]}}]
+        },
+        {
+          "name": "Editar paciente",
+          "request": {
+            "method": "PUT",
+            "url": "{{PATIENTS_URL}}/patients/{{pac_id}}",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombres\": \"Juan Editado\",\n  \"apellidos\": \"Perez Test\",\n  \"telefono\": \"{{pac_telefono}}\",\n  \"nombre_corto\": \"Juan Editado\",\n  \"email\": \"juan.editado@test.com\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Crear ficha activa",
+          "request": {
+            "method": "POST",
+            "url": "{{PATIENTS_URL}}/patients/{{pac_id}}/fichas",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"diagnostico\": \"Dolor lumbar crónico\",\n  \"cantidad_sesiones\": 10\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200 o 201', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+            "const j = pm.response.json();",
+            "pm.test('Tiene fic_id', () => pm.expect(j).to.have.property('fic_id'));",
+            "if (j.fic_id) pm.collectionVariables.set('fic_id', j.fic_id);"
+          ]}}]
+        },
+        {
+          "name": "Obtener ficha activa",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/patients/{{pac_id}}/fichas/activa" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Tiene diagnóstico', () => pm.expect(pm.response.json()).to.have.property('fic_diagnostico'));"
+          ]}}]
+        },
+        {
+          "name": "Incrementar sesión realizada",
+          "request": { "method": "PUT", "url": "{{PATIENTS_URL}}/fichas/{{fic_id}}/incrementar" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Disminuir sesión realizada",
+          "request": { "method": "PUT", "url": "{{PATIENTS_URL}}/fichas/{{fic_id}}/disminuir" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Listar todas las fichas del paciente",
+          "request": { "method": "GET", "url": "{{PATIENTS_URL}}/patients/{{pac_id}}/fichas" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Es array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "📅 Agenda Service",
+      "item": [
+        {
+          "name": "Verificar disponibilidad — slot libre",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/disponibilidad?fecha=2026-08-15&hora=10:00" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Tiene disponible', () => pm.expect(pm.response.json()).to.have.property('disponible'));"
+          ]}}]
+        },
+        {
+          "name": "Crear cita",
+          "request": {
+            "method": "POST",
+            "url": "{{AGENDA_URL}}/agenda",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{pac_id}},\n  \"fic_id\": {{fic_id}},\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\",\n  \"observacion\": \"Cita de prueba Postman\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200 o 201', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+            "const j = pm.response.json();",
+            "pm.test('Tiene agen_id', () => pm.expect(j).to.have.property('agen_id'));",
+            "if (j.agen_id) pm.collectionVariables.set('agen_id', j.agen_id);"
+          ]}}]
+        },
+        {
+          "name": "Verificar disponibilidad — slot ocupado",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/disponibilidad?fecha=2026-08-15&hora=10:00" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Slot ocupado', () => pm.expect(pm.response.json().disponible).to.be.false);"
+          ]}}]
+        },
+        {
+          "name": "Obtener cita por ID",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Estado AGENDADA', () => pm.expect(pm.response.json().agen_estado).to.eql('AGENDADA'));"
+          ]}}]
+        },
+        {
+          "name": "Citas por fecha",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/fecha/2026-08-15" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Incluye cita creada', () => {",
+            "  const ids = pm.response.json().map(c => c.agen_id);",
+            "  pm.expect(ids).to.include(Number(pm.collectionVariables.get('agen_id')));",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Citas por paciente",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/paciente/{{pac_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Es array', () => pm.expect(pm.response.json()).to.be.an('array'));"
+          ]}}]
+        },
+        {
+          "name": "Reagendar cita",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{agen_id}}/reagendar",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nueva_fecha\": \"2026-08-20\",\n  \"nueva_hora\": \"11:00\",\n  \"observacion\": \"Reagendada por prueba\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "Verificar estado REAGENDADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado REAGENDADA', () => pm.expect(pm.response.json().agen_estado).to.eql('REAGENDADA'));",
+            "pm.test('Nueva fecha correcta', () => pm.expect(pm.response.json().agen_fecha).to.include('2026-08-20'));"
+          ]}}]
+        },
+        {
+          "name": "Marcar realizada",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{agen_id}}/realizada",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"observacion\": \"Ejercicios realizados:\\n  • Curl de bíceps — 3 series × 12 reps\\n\\nEl paciente evolucionó bien.\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "Verificar estado REALIZADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado REALIZADA', () => pm.expect(pm.response.json().agen_estado).to.eql('REALIZADA'));"
+          ]}}]
+        },
+        {
+          "name": "Desmarcar realizada",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{agen_id}}/desmarcar",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "Guardar cal_event_id",
+          "request": {
+            "method": "PATCH",
+            "url": "{{AGENDA_URL}}/agenda/{{agen_id}}/cal_event",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"cal_event_id\": \"google_event_abc123\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        },
+        {
+          "name": "Cancelar cita",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{agen_id}}/cancelar",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "Verificar estado CANCELADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado CANCELADA', () => pm.expect(pm.response.json().agen_estado).to.eql('CANCELADA'));"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "📆 Calendar Service",
+      "item": [
+        {
+          "name": "Disponibilidad del día",
+          "request": { "method": "GET", "url": "{{CALENDAR_URL}}/disponibilidad?fecha=2026-08-15" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Tiene slots', () => pm.expect(pm.response.json()).to.have.property('slots'));"
+          ]}}]
+        },
+        {
+          "name": "Crear evento en GCal",
+          "request": {
+            "method": "POST",
+            "url": "{{CALENDAR_URL}}/eventos",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"titulo\": \"Dolor lumbar — Cita #99 — Juan Perez\",\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\",\n  \"descripcion\": \"👤 Paciente: Juan Perez\\n📞 56900000001\\n\\n📌 Instrucciones:\\n• Llevar ropa cómoda\",\n  \"ubicacion\": \"San Antonio 418, piso 3. Oficina 306. Santiago Centro\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const j = pm.response.json();",
+            "pm.test('Tiene event_id', () => pm.expect(j).to.have.property('event_id'));",
+            "if (j.event_id) pm.collectionVariables.set('cal_event_id', j.event_id);"
+          ]}}]
+        },
+        {
+          "name": "Eliminar evento de GCal",
+          "request": {
+            "method": "DELETE",
+            "url": "{{CALENDAR_URL}}/eventos/{{cal_event_id}}"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "📧 Dashboard — Notificaciones",
+      "item": [
+        {
+          "name": "Notify email — agendada",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{pac_id}},\n  \"evento\": \"agendada\",\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\",\n  \"agen_id\": {{agen_id}}\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Tiene notif', () => pm.expect(pm.response.json()).to.have.property('notif'));",
+            "pm.test('Mensaje no vacío', () => pm.expect(pm.response.json().notif.length).to.be.above(0));",
+            "console.log('Mensaje:', pm.response.json().notif);"
+          ]}}]
+        },
+        {
+          "name": "Notify email — reagendada",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{pac_id}},\n  \"evento\": \"reagendada\",\n  \"fecha\": \"2026-08-20\",\n  \"hora\": \"11:00\",\n  \"agen_id\": {{agen_id}},\n  \"fecha_orig\": \"2026-08-15\",\n  \"hora_orig\": \"10:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Mensaje menciona reagend', () => pm.expect(pm.response.json().notif.toLowerCase()).to.include('reagend'));",
+            "console.log('Mensaje:', pm.response.json().notif);"
+          ]}}]
+        },
+        {
+          "name": "Notify email — cancelada",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{pac_id}},\n  \"evento\": \"cancelada\",\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\",\n  \"agen_id\": {{agen_id}}\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Mensaje menciona cancelac', () => pm.expect(pm.response.json().notif.toLowerCase()).to.include('cancelac'));",
+            "console.log('Mensaje:', pm.response.json().notif);"
+          ]}}]
+        },
+        {
+          "name": "Notify email — realizada",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{pac_id}},\n  \"evento\": \"realizada\",\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\",\n  \"agen_id\": {{agen_id}}\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "console.log('Mensaje:', pm.response.json().notif);"
+          ]}}]
+        },
+        {
+          "name": "Notify email — pac_id inválido (sin info)",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": 99999,\n  \"evento\": \"agendada\",\n  \"fecha\": \"2026-08-15\",\n  \"hora\": \"10:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Mensaje de error graceful', () => pm.expect(pm.response.json().notif.length).to.be.above(0));",
+            "console.log('Mensaje:', pm.response.json().notif);"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "🤖 Bot WhatsApp (ai-service)",
+      "item": [
+        {
+          "name": "Saludo",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Hola\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde con saludo', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/hola|bienvenido|ayud/);",
+            "});"
+          ]}}]
+        },
+        {
+          "name": "Consultar horas",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"mis citas\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde con info de citas o ficha', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/ficha|cita|hora|sesion|pendiente/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+        {
+          "name": "Consultar horas (variante: mis sesiones)",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"cuántas sesiones me quedan\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde con sesiones/ficha', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/ficha|sesion|pendiente|realiz/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+        {
+          "name": "Agendar — pide fecha",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Resetear sesión antes del flujo de agendar",
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) { /* sesión limpia */ });"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "pm.test('Pide fecha o sugiere disponibilidad', () => {",
+                "  const r = pm.response.json().respuesta.toLowerCase();",
+                "  pm.expect(r).to.match(/día|fecha|disponib|semana/);",
+                "});",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"quiero agendar una hora\"\n}" }
+          }
+        },
+        {
+          "name": "Agendar — fecha + hora válida",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"el 2026-09-05 a las 10:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "const r = pm.response.json().respuesta.toLowerCase();",
+            "console.log(pm.response.json().respuesta);",
+            "pm.test('Agendado o pide hora', () => pm.expect(r).to.match(/agendad|listo|hora|10:00/));"
+          ]}}]
+        },
+        {
+          "name": "Consulta precio",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Limpiar sesión pendiente del flujo de agendar",
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) {});"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿cuánto vale la sesión?\"\n}" }
+          }
+        },
+        {
+          "name": "Consulta FONASA",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿aceptan FONASA?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+        {
+          "name": "Cancelar — flujo inicio",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) {});"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "const r = pm.response.json().respuesta.toLowerCase();",
+                "pm.test('Inicia flujo cancelar', () => pm.expect(r).to.match(/cancelar|cancel|cita|hora/));",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"quiero cancelar mi hora\"\n}" }
+          }
+        },
+        {
+          "name": "Reagendar — flujo inicio",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Resetear sesión: cancelar puede haber dejado estado pendiente de confirmación",
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) {});"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "const r = pm.response.json().respuesta.toLowerCase();",
+                "pm.test('Inicia flujo reagendar', () => pm.expect(r).to.match(/reagend|mover|fecha|hora/));",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"quiero mover mi cita\"\n}" }
+          }
+        },
+        {
+          "name": "Diagnóstico bilateral (debe escalar a Felipe)",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Resetear sesión: reagendar puede haber dejado estado pendiente de nueva fecha",
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) {});"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "pm.test('Escala a Felipe (bilateral)', () => {",
+                "  const r = pm.response.json().respuesta.toLowerCase();",
+                "  pm.expect(r).to.match(/felipe|personalmente|contacta/);",
+                "});",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"tengo dolor en ambas rodillas\"\n}" }
+          }
+        },
+        {
+          "name": "Escape / reset sesión",
+          "request": {
+            "method": "POST",
+            "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"menu\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        }
+      ]
+    },
+
+    {
+      "name": "💬 Preguntas Frecuentes (Fine-Tuning Felipe)",
+      "description": "Basado en conversaciones reales de WhatsApp. Verifica que el bot responda igual que Felipe. La sección ⚙ Setup debe haber cargado la persona de Felipe antes.",
+      "item": [
+
+        {
+          "name": "FAQ: Saludo genérico → 'Buenos días / Diga'",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "pm.sendRequest({",
+                "  url: pm.collectionVariables.get('AI_URL') + '/process',",
+                "  method: 'POST',",
+                "  header: { 'Content-Type': 'application/json' },",
+                "  body: { mode: 'raw', raw: JSON.stringify({ numero: pm.collectionVariables.get('PHONE'), mensaje: 'menu' }) }",
+                "}, function(err, res) {});"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Status 200', () => pm.response.to.have.status(200));",
+                "pm.test('Responde con saludo + invita a continuar', () => {",
+                "  const r = pm.response.json().respuesta.toLowerCase();",
+                "  pm.expect(r).to.match(/buenos|hola|diga|ayud/);",
+                "});",
+                "console.log(pm.response.json().respuesta);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Hola buen día\"\n}" }
+          }
+        },
+
+        {
+          "name": "FAQ: Lead de Meta — 'Quiero más información'",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¡Hola! Quiero más información\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Pregunta si tiene orden médica', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/orden|médica|derivaci|fonasa|kinesiolog/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿Cuánto salen 5 sesiones?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Cuánto salen 5 sesiones?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Menciona que la promo es de 10 sesiones, no de 5', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/10|diez|promoci/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿Es atención individual?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Es atención individual?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Aclara que no es individual', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/no.*individual|no.*solo|grupal|varios|3 paciente/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿Aceptan bonos online?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Aceptan bonos online?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Solo Santiago Centro, no online', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/no.*online|presencial|santiago centro/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Diagnóstico bilateral → escala a Felipe",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Tengo dolor en ambas rodillas\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Escala a Felipe (bilateral)', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/felipe|personalmente|contacta/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Diagnóstico bilateral — lados distintos",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Tengo tendinitis en el hombro izquierdo y también me duele el tobillo derecho\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Escala a Felipe por bilateral', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/felipe|personalmente|contacta/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Servicio no disponible — masajes post lipo",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Necesito masajes post operatorio de liposucción\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde que no lo hacemos', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/no.*hacemos|no.*realizamos|no.*atendem/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Servicio no disponible — piso pélvico",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Hacen ejercicios de piso pélvico?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde que no lo hacemos', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/no.*hacemos|no.*realizamos|no.*atendem/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿Tengo que ir a hablar con el kine antes?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Tengo que ir a hablar con el kinesiólogo antes de empezar?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Dice que se coordina por chat', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/chat|whatsapp|coordinamos|no.*ir/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿A qué horarios atienden?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Qué horarios tienen disponibles?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde con horarios (números o palabras de tiempo)', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/\\d+.*pm|\\d+.*am|mañana|tarde|lunes|miércoles|viernes|horario/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Valor particular",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Cuánto sale particular\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Menciona precio o solicita diagnóstico', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/10\\.000|10000|diagnóstico|sesión|valor/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: FONASA — límite horario (hasta las 2pm)",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Puedo comprar el bono FONASA en la tarde?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Menciona límite horario FONASA', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/2pm|14:00|2 pm|hasta|lunes.*viernes|mediodia/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: ¿Los códigos son nivel 1?",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Los códigos FONASA son nivel 1?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Confirma nivel 1', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/nivel 1|nivel1|sí|si/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Paciente sin orden médica",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"No tengo orden médica\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Indica que debe conseguir orden con médico', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/médico|orden|conseguir|particular/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Agradecimiento → 'De nada'",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"Muchas gracias por la info\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Responde de nada o similar', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/de nada|con gusto|cualquier|ayud/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        },
+
+        {
+          "name": "FAQ: Instrucciones al confirmar cita particular",
+          "request": {
+            "method": "POST", "url": "{{AI_URL}}/process",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"numero\": \"{{PHONE}}\",\n  \"mensaje\": \"¿Qué debo llevar a la sesión?\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Menciona zapatillas o ropa cómoda', () => {",
+            "  const r = pm.response.json().respuesta.toLowerCase();",
+            "  pm.expect(r).to.match(/zapatillas|ropa.*cómod|cómod.*ropa|crema/);",
+            "});",
+            "console.log(pm.response.json().respuesta);"
+          ]}}]
+        }
+
+      ]
+    },
+
+    {
+      "name": "🔄 Flujo E2E — Agendar → Realizar → Cancelar",
+      "description": "Ejecuta en orden. Cada request usa variables seteadas por el anterior. Teléfono dinámico para evitar duplicados entre ejecuciones.",
+      "item": [
+        {
+          "name": "E2E-1: Crear paciente test",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": { "exec": [
+                "// Teléfono dinámico: garantiza BD limpia en cada run",
+                "const phone = '569' + Date.now().toString().slice(-8);",
+                "pm.collectionVariables.set('e2e_phone', phone);",
+                "console.log('📱 E2E phone:', phone);"
+              ]}
+            },
+            {
+              "listen": "test",
+              "script": { "exec": [
+                "pm.test('Paciente creado', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+                "const j = pm.response.json();",
+                "pm.test('Tiene pac_id', () => pm.expect(j).to.have.property('pac_id'));",
+                "pm.collectionVariables.set('e2e_pac_id', j.pac_id);",
+                "console.log('pac_id:', j.pac_id);"
+              ]}
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "url": "{{PATIENTS_URL}}/patients",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nombres\": \"E2E\",\n  \"apellidos\": \"Test\",\n  \"telefono\": \"{{e2e_phone}}\",\n  \"nombre_corto\": \"E2E Test\",\n  \"email\": \"e2e@test.com\"\n}" }
+          }
+        },
+        {
+          "name": "E2E-2: Crear ficha",
+          "request": {
+            "method": "POST",
+            "url": "{{PATIENTS_URL}}/patients/{{e2e_pac_id}}/fichas",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"diagnostico\": \"E2E Test Diagnóstico\",\n  \"cantidad_sesiones\": 5\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Ficha creada', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+            "pm.test('Tiene fic_id', () => pm.expect(pm.response.json()).to.have.property('fic_id'));",
+            "pm.collectionVariables.set('e2e_fic_id', pm.response.json().fic_id);"
+          ]}}]
+        },
+        {
+          "name": "E2E-3: Agendar cita",
+          "request": {
+            "method": "POST",
+            "url": "{{AGENDA_URL}}/agenda",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{e2e_pac_id}},\n  \"fic_id\": {{e2e_fic_id}},\n  \"fecha\": \"2026-09-10\",\n  \"hora\": \"09:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Cita creada', () => pm.expect(pm.response.code).to.be.oneOf([200,201]));",
+            "const j = pm.response.json();",
+            "pm.test('Tiene agen_id', () => pm.expect(j).to.have.property('agen_id'));",
+            "pm.collectionVariables.set('e2e_agen_id', j.agen_id);",
+            "pm.test('Estado AGENDADA', () => pm.expect(j.agen_estado).to.eql('AGENDADA'));"
+          ]}}]
+        },
+        {
+          "name": "E2E-4: Reagendar cita",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}/reagendar",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"nueva_fecha\": \"2026-09-11\",\n  \"nueva_hora\": \"10:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "E2E-4b: Verificar estado REAGENDADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado REAGENDADA', () => pm.expect(pm.response.json().agen_estado).to.eql('REAGENDADA'));",
+            "pm.test('Nueva fecha 09-11', () => pm.expect(pm.response.json().agen_fecha).to.include('2026-09-11'));"
+          ]}}]
+        },
+        {
+          "name": "E2E-5: Notificar email reagenda",
+          "request": {
+            "method": "POST",
+            "url": "{{DASHBOARD_URL}}/internal/notify-email",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"pac_id\": {{e2e_pac_id}},\n  \"evento\": \"reagendada\",\n  \"fecha\": \"2026-09-11\",\n  \"hora\": \"10:00\",\n  \"agen_id\": {{e2e_agen_id}},\n  \"fecha_orig\": \"2026-09-10\",\n  \"hora_orig\": \"09:00\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Notif no vacía', () => pm.expect(pm.response.json().notif.length).to.be.above(0));",
+            "console.log('📧', pm.response.json().notif);"
+          ]}}]
+        },
+        {
+          "name": "E2E-6: Marcar realizada",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}/realizada",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{\n  \"observacion\": \"Ejercicios realizados:\\n  • Sentadilla — 3 series × 10 reps\\n\\nBuena sesión E2E.\"\n}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "E2E-6b: Verificar estado REALIZADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado REALIZADA', () => pm.expect(pm.response.json().agen_estado).to.eql('REALIZADA'));"
+          ]}}]
+        },
+        {
+          "name": "E2E-7: Verificar sesiones en ficha",
+          "request": {
+            "method": "GET",
+            "url": "{{PATIENTS_URL}}/patients/{{e2e_pac_id}}/fichas/activa"
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "console.log('Ficha:', JSON.stringify(pm.response.json()));"
+          ]}}]
+        },
+        {
+          "name": "E2E-8: Cancelar cita",
+          "request": {
+            "method": "PUT",
+            "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}/cancelar",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": { "mode": "raw", "raw": "{}" }
+          },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Status 200', () => pm.response.to.have.status(200));",
+            "pm.test('Operación ok', () => pm.expect(pm.response.json().ok).to.be.true);"
+          ]}}]
+        },
+        {
+          "name": "E2E-8b: Verificar estado CANCELADA",
+          "request": { "method": "GET", "url": "{{AGENDA_URL}}/agenda/{{e2e_agen_id}}" },
+          "event": [{ "listen": "test", "script": { "exec": [
+            "pm.test('Estado CANCELADA', () => pm.expect(pm.response.json().agen_estado).to.eql('CANCELADA'));"
+          ]}}]
+        }
+      ]
+    }
+
+  ]
+}
