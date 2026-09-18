@@ -2,12 +2,21 @@ package client
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
 	"strings"
 )
+
+// ErrNotFound distingue "el recurso genuinamente no existe" (404) de
+// cualquier otro error de red/timeout/conexión. Es crítico no tratar ambos
+// casos igual: confundir "patients-service no respondió" con "el paciente
+// no tiene ficha activa" hacía que, ante un hiccup de red, se creara una
+// ficha nueva sin preguntar aunque ya hubiera una activa (bug reportado por
+// Felipe: "a veces crea una ficha varias veces").
+var ErrNotFound = errors.New("not found")
 
 // PatientsClient llama al patients-service en :8083
 type PatientsClient struct {
@@ -47,7 +56,7 @@ func (c *PatientsClient) get(path string, out interface{}) error {
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode == 404 {
-		return fmt.Errorf("not found")
+		return ErrNotFound
 	}
 	body, _ := io.ReadAll(resp.Body)
 	return json.Unmarshal(body, out)

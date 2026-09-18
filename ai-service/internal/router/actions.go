@@ -3,6 +3,7 @@ package router
 import (
 	"ai-service/internal/client"
 	"ai-service/internal/model"
+	"errors"
 	"fmt"
 	"log"
 	"regexp"
@@ -757,8 +758,23 @@ func ladoAmbiguo(diagnostico string) (string, bool) {
 
 // verificarFichaActivaYCrear revisa si el paciente ya tiene una ficha activa
 // antes de crear una nueva — evita duplicados silenciosos (Bug #6).
+//
+// IMPORTANTE: si GetFichaActiva falla por un motivo que NO sea "no existe"
+// (timeout, patients-service caído, error de red), antes se ignoraba el
+// error (`_`) y se trataba igual que "no tiene ficha activa", creando una
+// ficha nueva sin preguntar nunca — aunque el paciente sí tuviera una activa.
+// Ahora se distingue: solo se procede a crear directo si el error es
+// client.ErrNotFound (404 real). Cualquier otro error corta el flujo sin
+// crear nada, para no arriesgar fichas duplicadas.
 func (r *Router) verificarFichaActivaYCrear(paciente *client.Patient, diagnostico string, sesiones int) map[string]interface{} {
-	fichaActiva, _ := r.patients.GetFichaActiva(paciente.ID)
+	fichaActiva, err := r.patients.GetFichaActiva(paciente.ID)
+	if err != nil && !errors.Is(err, client.ErrNotFound) {
+		log.Printf("[Ficha] error verificando ficha activa de paciente %d (no se crea por seguridad): %v", paciente.ID, err)
+		return map[string]interface{}{
+			"respuesta":    "Tuve un problema para verificar tu ficha. Intenta nuevamente en un momento.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
 	if fichaActiva != nil {
 		return map[string]interface{}{
 			"respuesta": fmt.Sprintf("Ya tienes una ficha activa por %s. ¿Es un tratamiento nuevo o quieres continuar con esa?", fichaActiva.Diagnostico),

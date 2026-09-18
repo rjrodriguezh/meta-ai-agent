@@ -36,6 +36,22 @@ def _registrar_paciente(nombres: str, apellidos: str, telefono: str) -> dict:
     return r.json()
 
 
+def _crear_ficha(pac_id: int, diagnostico: str, sesiones: int = 10) -> dict:
+    r = requests.post(
+        f"{PATIENTS_URL}/patients/{pac_id}/fichas",
+        json={"diagnostico": diagnostico, "cantidad_sesiones": sesiones},
+        timeout=10,
+    )
+    r.raise_for_status()
+    return r.json()
+
+
+def _fichas_del_paciente(pac_id: int) -> list:
+    r = requests.get(f"{PATIENTS_URL}/patients/{pac_id}/fichas", timeout=10)
+    r.raise_for_status()
+    return r.json()
+
+
 def _crear_cita(pac_id: int, fecha: str, hora: str) -> dict:
     r = requests.post(
         f"{AGENDA_URL}/agenda",
@@ -262,3 +278,58 @@ class TestDerivacionFelipe:
         r = respuesta("Tengo tendinitis de rodilla", tel)
         assert "derecha" in r.lower() or "izquierda" in r.lower() or "lado" in r.lower(), \
             f"No preguntó el lado ante zona ambigua: {r}"
+
+
+# ---------------------------------------------------------------------------
+# 6. FICHA DUPLICADA — nunca debe crear una ficha nueva silenciosamente si
+#    ya hay una activa (Bug #6 + hardening del manejo de errores de red).
+# ---------------------------------------------------------------------------
+
+class TestFichaActivaNoSeDuplica:
+
+    def test_con_ficha_activa_pregunta_antes_de_crear_otra(self):
+        tel = _telefono_unico("5709")
+        pac = _registrar_paciente("Test", "FichaActiva", tel)
+        _crear_ficha(pac["pac_id"], "Tendinitis de hombro derecho")
+
+        r = respuesta("Tengo esguince de tobillo izquierdo", tel)
+        assert "ya tienes una ficha activa" in r.lower(), \
+            f"No avisó que ya había ficha activa, pudo haber creado otra en silencio: {r}"
+
+        # Verificar en BD: debe seguir habiendo solo 1 ficha ACTIVA (la
+        # pregunta todavía no fue respondida, así que no debió crear nada)
+        fichas = _fichas_del_paciente(pac["pac_id"])
+        activas = [f for f in fichas if f.get("fic_estado", "").upper() == "ACTIVA"]
+        assert len(activas) == 1, f"Debía haber exactamente 1 ficha activa, hay {len(activas)}: {fichas}"
+
+    def test_responder_continuar_no_crea_ficha_nueva(self):
+        tel = _telefono_unico("5710")
+        pac = _registrar_paciente("Test", "ContinuarFicha", tel)
+        _crear_ficha(pac["pac_id"], "Lumbago")
+
+        respuesta("Tengo dolor de rodilla derecha", tel)  # -> pregunta ficha activa
+        r = respuesta("Prefiero continuar con la que tengo", tel)
+        assert "felipe" not in r.lower() or "seguimos" in r.lower(), f"Respuesta inesperada: {r}"
+
+        fichas = _fichas_del_paciente(pac["pac_id"])
+        activas = [f for f in fichas if f.get("fic_estado", "").upper() == "ACTIVA"]
+        assert len(activas) == 1, \
+            f"Al elegir continuar NO debía crearse una ficha nueva, hay {len(activas)} activas: {fichas}"
+
+    def test_responder_nuevo_cierra_la_anterior_y_crea_solo_una_activa(self):
+        """El repo cierra automáticamente la ficha anterior al crear una
+        nueva (FichaRepository.Create), así que después de confirmar 'nuevo'
+        debe seguir habiendo exactamente 1 ficha ACTIVA (la nueva), nunca 2."""
+        tel = _telefono_unico("5711")
+        pac = _registrar_paciente("Test", "NuevaFicha", tel)
+        _crear_ficha(pac["pac_id"], "Lumbago")
+
+        respuesta("Tengo dolor de rodilla derecha", tel)  # -> pregunta ficha activa
+        respuesta("Es un tratamiento nuevo", tel)          # -> debe crear la nueva
+
+        fichas = _fichas_del_paciente(pac["pac_id"])
+        activas = [f for f in fichas if f.get("fic_estado", "").upper() == "ACTIVA"]
+        assert len(activas) == 1, \
+            f"Después de crear la ficha nueva debía haber exactamente 1 activa, hay {len(activas)}: {fichas}"
+        assert "rodilla" in activas[0].get("fic_diagnostico", "").lower(), \
+            f"La ficha activa no es la nueva (rodilla): {activas[0]}"
