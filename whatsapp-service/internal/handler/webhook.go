@@ -48,7 +48,23 @@ func (h *WebhookHandler) Recibir(c *fiber.Ctx) error {
 		// --- WhatsApp ---
 		for _, change := range entry.Changes {
 			for _, msg := range change.Value.Messages {
-				if msg.From == "" || msg.Text.Body == "" {
+				if msg.From == "" {
+					continue
+				}
+				// Bug #4: antes las imágenes/documentos/audio se descartaban
+				// en silencio (Text.Body vacío). Aún no tenemos OCR de
+				// órdenes médicas (esa función existía en el Python viejo
+				// vía Azure Document Intelligence y no se migró a Go), pero
+				// al menos avisamos al paciente en vez de no responder nada.
+				if msg.Text.Body == "" {
+					if msg.Type != "" && msg.Type != "text" {
+						log.Printf("[Webhook] Mensaje tipo '%s' de %s — no se puede leer aún, se avisa al paciente", msg.Type, msg.From)
+						mensajes = append(mensajes, model.IncomingMessage{
+							Numero:     msg.From,
+							Texto:      "__no_procesable__",
+							Plataforma: "whatsapp",
+						})
+					}
 					continue
 				}
 				mensajes = append(mensajes, model.IncomingMessage{
@@ -77,10 +93,18 @@ func (h *WebhookHandler) Recibir(c *fiber.Ctx) error {
 	for _, msg := range mensajes {
 		log.Printf("[Webhook/%s] De %s: %s", msg.Plataforma, msg.Numero, msg.Texto)
 
-		respuesta, err := h.ai.ProcesarMensaje(msg.Numero, msg.Texto)
-		if err != nil {
-			log.Printf("[Webhook] Error en ai-service: %v", err)
-			respuesta = "Ocurrió un problema. Intenta nuevamente."
+		var respuesta string
+		var err error
+		if msg.Texto == "__no_procesable__" {
+			// Aún no leemos fotos/documentos/audio (Bug #4) — avisar en vez
+			// de fallar silenciosamente o mandarlo a clasificar como texto.
+			respuesta = "Por ahora no puedo leer fotos ni documentos 🙏 Cuéntame en texto tu diagnóstico o el motivo de tu consulta."
+		} else {
+			respuesta, err = h.ai.ProcesarMensaje(msg.Numero, msg.Texto)
+			if err != nil {
+				log.Printf("[Webhook] Error en ai-service: %v", err)
+				respuesta = "Ocurrió un problema. Intenta nuevamente."
+			}
 		}
 
 		// Enviar respuesta por la plataforma correcta

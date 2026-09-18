@@ -16,6 +16,7 @@ type Patient struct {
 	ContactoEmergencia string    `gorm:"column:pac_contacto_emergencia"            json:"pac_contacto_emergencia"`
 	TelefonoEmergencia string    `gorm:"column:pac_telefono_emergencia"            json:"pac_telefono_emergencia"`
 	Estado             string    `gorm:"column:pac_estado;default:ACTIVO"          json:"pac_estado"`
+	Prevision          string    `gorm:"column:pac_prevision"                      json:"pac_prevision"`
 	CreatedAt          time.Time `gorm:"column:pac_fecha_creacion"                 json:"pac_fecha_creacion"`
 }
 
@@ -49,4 +50,12 @@ type UpdatePatientRequest struct {
 	Comuna             string `json:"comuna"`
 	ContactoEmergencia string `json:"contacto_emergencia"`
 	TelefonoEmergencia string `json:"telefono_emergencia"`
+}
+
+// UpdatePrevisionRequest — usado por ai-service para guardar la previsión
+// (FONASA / ISAPRE / PARTICULAR) una vez que el paciente responde el flujo
+// de "¿Por fonasa?". Se usa después para diferenciar el mensaje de
+// confirmación de cita.
+type UpdatePrevisionRequest struct {
+	Prevision string `json:"prevision" validate:"required"`
 }

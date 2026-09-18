@@ -28,6 +28,7 @@ type Patient struct {
 	NombreCorto string `json:"pac_nombre_corto"`
 	Telefono    string `json:"pac_telefono"`
 	Estado      string `json:"pac_estado"`
+	Prevision   string `json:"pac_prevision"`
 }
 
 type Ficha struct {
@@ -65,6 +66,21 @@ func (c *PatientsClient) post(path string, payload map[string]interface{}, out i
 
 func (c *PatientsClient) put(path string) error {
 	req, _ := http.NewRequest("PUT", c.baseURL+path, nil)
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	return nil
+}
+
+func (c *PatientsClient) putJSON(path string, payload map[string]interface{}) error {
+	b, _ := json.Marshal(payload)
+	req, err := http.NewRequest("PUT", c.baseURL+path, strings.NewReader(string(b)))
+	if err != nil {
+		return err
+	}
+	req.Header.Set("Content-Type", "application/json")
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
 		return err
@@ -120,6 +136,14 @@ func (c *PatientsClient) CreateFicha(pacID uint, diagnostico string, sesiones in
 		"cantidad_sesiones": sesiones,
 	}, &f)
 	return &f, err
+}
+
+// SetPrevision — guarda la previsión del paciente (FONASA/ISAPRE/PARTICULAR)
+// para poder diferenciar el mensaje de confirmación de cita más adelante.
+func (c *PatientsClient) SetPrevision(pacID uint, prevision string) error {
+	return c.putJSON(fmt.Sprintf("/patients/%d/prevision", pacID), map[string]interface{}{
+		"prevision": prevision,
+	})
 }
 
 // IncrementarSesion — equivale a incrementar_sesion_realizada

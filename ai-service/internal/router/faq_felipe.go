@@ -49,10 +49,6 @@ var reglasFAQFelipe = []reglaFAQ{
 		respuesta: "No es necesario que vengas antes; todo se coordina directamente por WhatsApp.",
 	},
 	{
-		incluye:   []string{"particular"},
-		respuesta: "El programa particular es de $100.000 por las 10 sesiones ($10.000 c/u), o $15.000 por sesión individual. ¿Por fonasa? Así te confirmo el valor exacto.",
-	},
-	{
 		incluye:   []string{"fonasa", "tarde"},
 		respuesta: "Los bonos FONASA se deben comprar antes de las 14:00 hrs, de lunes a viernes.",
 	},

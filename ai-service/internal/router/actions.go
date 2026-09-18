@@ -5,6 +5,7 @@ import (
 	"ai-service/internal/model"
 	"fmt"
 	"log"
+	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -173,7 +174,7 @@ func (r *Router) manejarAgendar(datos map[string]interface{}, sesion map[string]
 	if r.dashboard != nil {
 		notif = r.dashboard.NotifyEmail(paciente.ID, "agendada", fecha, hora, cita.ID, "", "")
 	}
-	respuesta := fmt.Sprintf("Listo %s. Quedas agendado/a el %s a las %s.\nLleva ropa cómoda y zapatillas.", paciente.NombreCorto, fecha, hora)
+	respuesta := mensajeConfirmacionCita(paciente, ficha, fecha, hora)
 	if notif != "" {
 		respuesta += "\n\n📩 " + notif
 	}
@@ -182,6 +183,36 @@ func (r *Router) manejarAgendar(datos map[string]interface{}, sesion map[string]
 		"nueva_sesion": map[string]interface{}{},
 		"pac_id":       paciente.ID,
 		"agen_id":      cita.ID,
+	}
+}
+
+// manejarConsultaDisponibilidad responde con las horas LIBRES reales del
+// Calendar en vez del horario general de atención (Bug #9).
+func (r *Router) manejarConsultaDisponibilidad() map[string]interface{} {
+	if r.calendar == nil || !r.calendar.Disponible() {
+		return map[string]interface{}{
+			"respuesta":    "Ofrecemos atención los lunes, miércoles y viernes entre las 9:30am y 6pm. Dime qué día te acomoda y te confirmo la hora exacta.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	dias, err := r.calendar.ProximosDisponibles(3)
+	if err != nil || len(dias) == 0 {
+		return map[string]interface{}{
+			"respuesta":    "No tengo horas disponibles en los próximos días. Indica otro día entre semana.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	texto := "Estas son las horas disponibles:\n"
+	for _, d := range dias {
+		slots := d.SlotsLibres
+		if len(slots) > 3 {
+			slots = slots[:3]
+		}
+		texto += fmt.Sprintf("- %s (%s): %s\n", d.Fecha, d.DiaSemana, joinSlots(slots))
+	}
+	return map[string]interface{}{
+		"respuesta":    strings.TrimSpace(texto),
+		"nueva_sesion": map[string]interface{}{},
 	}
 }
 
@@ -688,13 +719,92 @@ func (r *Router) manejarCrearFicha(datos map[string]interface{}, paciente *clien
 		}
 	}
 
+	// Si el lado no está claro para una zona que lo requiere, preguntar antes de crear nada
+	if zona, ambiguo := ladoAmbiguo(diagnostico); ambiguo {
+		return map[string]interface{}{
+			"respuesta": fmt.Sprintf("¿%s derecha?", zona),
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":      "esperando_lado_diagnostico",
+				"diagnostico_pendiente": diagnostico,
+			},
+		}
+	}
+
 	sesiones := getIntFromMap(datos, "cantidad_sesiones", 10)
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, sesiones)
+}
+
+// ladoAmbiguo detecta si el diagnóstico menciona una zona del cuerpo que
+// requiere lado (derecha/izquierda) pero no lo especifica.
+func ladoAmbiguo(diagnostico string) (string, bool) {
+	d := strings.ToLower(diagnostico)
+	if strings.Contains(d, "derech") || strings.Contains(d, "izquierd") ||
+		strings.Contains(d, "ambos") || strings.Contains(d, "ambas") || strings.Contains(d, "bilateral") {
+		return "", false
+	}
+	zonas := []struct{ clave, nombre string }{
+		{"tobillo", "Tobillo"}, {"rodilla", "Rodilla"}, {"hombro", "Hombro"},
+		{"pierna", "Pierna"}, {"pie", "Pie"}, {"codo", "Codo"},
+		{"muñeca", "Muñeca"}, {"cadera", "Cadera"},
+	}
+	for _, z := range zonas {
+		if strings.Contains(d, z.clave) {
+			return z.nombre, true
+		}
+	}
+	return "", false
+}
+
+// verificarFichaActivaYCrear revisa si el paciente ya tiene una ficha activa
+// antes de crear una nueva — evita duplicados silenciosos (Bug #6).
+func (r *Router) verificarFichaActivaYCrear(paciente *client.Patient, diagnostico string, sesiones int) map[string]interface{} {
+	fichaActiva, _ := r.patients.GetFichaActiva(paciente.ID)
+	if fichaActiva != nil {
+		return map[string]interface{}{
+			"respuesta": fmt.Sprintf("Ya tienes una ficha activa por %s. ¿Es un tratamiento nuevo o quieres continuar con esa?", fichaActiva.Diagnostico),
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":      "confirmar_ficha_nueva",
+				"diagnostico_pendiente": diagnostico,
+			},
+		}
+	}
+	return r.crearFichaYPreguntarFonasa(paciente, diagnostico, sesiones)
+}
+
+// crearFichaYPreguntarFonasa crea la ficha y encadena la pregunta obligatoria
+// de previsión (Bug #1e: antes no se preguntaba fonasa tras el diagnóstico).
+func (r *Router) crearFichaYPreguntarFonasa(paciente *client.Patient, diagnostico string, sesiones int) map[string]interface{} {
 	ficha, err := r.patients.CreateFicha(paciente.ID, diagnostico, sesiones)
 	if err != nil {
 		return map[string]interface{}{"respuesta": "No pude crear la ficha.", "nueva_sesion": map[string]interface{}{}}
 	}
 	return map[string]interface{}{
-		"respuesta":    fmt.Sprintf("Listo, ficha creada por %s con %d sesiones.", ficha.Diagnostico, ficha.CantidadSesiones),
+		"respuesta":    fmt.Sprintf("Listo, ficha creada por %s con %d sesiones.\n\n¿Por fonasa?", ficha.Diagnostico, ficha.CantidadSesiones),
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_fonasa"},
+	}
+}
+
+// manejarLadoDiagnostico procesa la respuesta a "¿[Zona] derecha?"
+func (r *Router) manejarLadoDiagnostico(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+	diagnostico := getString(sesion, "diagnostico_pendiente")
+	if esRespuestaNegativa(texto) {
+		diagnostico += " izquierda"
+	} else {
+		diagnostico += " derecha"
+	}
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
+}
+
+// confirmarFichaNueva procesa la respuesta a "¿Es un tratamiento nuevo o quieres continuar con esa?"
+func (r *Router) confirmarFichaNueva(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := strings.ToLower(strings.TrimSpace(getString(intent.Datos, "texto_original")))
+	diagnostico := getString(sesion, "diagnostico_pendiente")
+	if strings.Contains(texto, "nuevo") || strings.Contains(texto, "otro") || strings.Contains(texto, "otra") {
+		return r.crearFichaYPreguntarFonasa(paciente, diagnostico, 10)
+	}
+	return map[string]interface{}{
+		"respuesta":    "Oka, seguimos con tu ficha activa entonces.",
 		"nueva_sesion": map[string]interface{}{},
 	}
 }
@@ -713,6 +823,228 @@ func (r *Router) manejarMarcarRealizada(paciente *client.Patient) map[string]int
 	return map[string]interface{}{
 		"respuesta":    mensajeCierre(fmt.Sprintf("Listo, marqué como realizada la sesión del %s a las %s.", cita.Fecha, cita.Hora)),
 		"nueva_sesion": map[string]interface{}{},
+	}
+}
+
+// --- PREVISIÓN (Bug #1: antes esto dependía 100% de que OpenAI recordara
+// la conversación, sin ningún estado. Ahora es una máquina de estados igual
+// que agendar/reagendar/cancelar, con los mensajes EXACTOS del documento de
+// fine-tuning de Felipe.) ---
+
+func esRespuestaNegativa(texto string) bool {
+	t := strings.ToLower(strings.TrimSpace(texto))
+	negativas := []string{"no"}
+	for _, n := range negativas {
+		if t == n || strings.HasPrefix(t, n+" ") || strings.HasPrefix(t, n+",") {
+			return true
+		}
+	}
+	return false
+}
+
+func esRespuestaAfirmativa(texto string) bool {
+	t := strings.ToLower(strings.TrimSpace(texto))
+	afirmativas := []string{"si", "sí", "claro", "correcto", "afirmativo", "por fonasa", "soy fonasa", "tengo fonasa"}
+	for _, a := range afirmativas {
+		if t == a || strings.Contains(t, a) {
+			return true
+		}
+	}
+	return false
+}
+
+// detectarTramo busca menciones directas de tramo ("tramo b", "letra b",
+// "fonasa b") para poder saltar directo si el paciente ya lo dijo de una.
+func detectarTramo(texto string) string {
+	t := strings.ToLower(texto)
+	patrones := []*regexp.Regexp{
+		regexp.MustCompile(`\btramo\s*([abcd])\b`),
+		regexp.MustCompile(`\bletra\s*([abcd])\b`),
+		regexp.MustCompile(`\bfonasa\s+([abcd])\b`),
+	}
+	for _, re := range patrones {
+		if m := re.FindStringSubmatch(t); len(m) > 1 {
+			return strings.ToUpper(m[1])
+		}
+	}
+	return ""
+}
+
+// detectarPrevisionNoFonasa busca "isapre" o "particular" mencionados directo.
+func detectarPrevisionNoFonasa(texto string) string {
+	t := strings.ToLower(texto)
+	tieneIsapre := strings.Contains(t, "isapre")
+	tieneParticular := strings.Contains(t, "particular") || strings.Contains(t, "pago directo") ||
+		strings.Contains(t, "sin prevision") || strings.Contains(t, "sin previsión")
+	if tieneIsapre && !tieneParticular {
+		return "ISAPRE"
+	}
+	if tieneParticular && !tieneIsapre {
+		return "PARTICULAR"
+	}
+	return ""
+}
+
+// manejarRespuestaFonasa procesa la respuesta a "¿Por fonasa?"
+func (r *Router) manejarRespuestaFonasa(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+
+	// Si el paciente ya adelantó el tramo o isapre/particular en la misma respuesta
+	if tramo := detectarTramo(texto); tramo != "" {
+		return r.resolverTramo(tramo, paciente)
+	}
+	if prev := detectarPrevisionNoFonasa(texto); prev != "" {
+		return r.resolverPrevisionNoFonasa(prev, paciente)
+	}
+
+	if esRespuestaNegativa(texto) {
+		return map[string]interface{}{
+			"respuesta":    "¿Es isapre o particular?",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_isapre_particular"},
+		}
+	}
+	if esRespuestaAfirmativa(texto) {
+		return map[string]interface{}{
+			"respuesta":    "¿Ud es fonasa letra A, B, C o D?",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_tramo"},
+		}
+	}
+	return map[string]interface{}{
+		"respuesta":    "¿Por fonasa? (sí o no)",
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_fonasa"},
+	}
+}
+
+// manejarRespuestaTramo procesa la respuesta a "¿Ud es fonasa letra A, B, C o D?"
+func (r *Router) manejarRespuestaTramo(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+	tramo := detectarTramo(texto)
+	if tramo == "" {
+		t := strings.ToLower(strings.TrimSpace(texto))
+		if t == "a" || t == "b" || t == "c" || t == "d" {
+			tramo = strings.ToUpper(t)
+		}
+	}
+	if tramo == "" {
+		return map[string]interface{}{
+			"respuesta":    "¿Ud es fonasa letra A, B, C o D?",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_tramo"},
+		}
+	}
+	return r.resolverTramo(tramo, paciente)
+}
+
+func (r *Router) resolverTramo(tramo string, paciente *client.Patient) map[string]interface{} {
+	if tramo == "A" {
+		if err := r.patients.SetPrevision(paciente.ID, "PARTICULAR"); err != nil {
+			log.Printf("[Previsión] error guardando PARTICULAR (tramo A): %v", err)
+		}
+		return map[string]interface{}{
+			"respuesta":    "Ok. Entonces es particular.\n\n" + mensajeParticular(),
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	if err := r.patients.SetPrevision(paciente.ID, "FONASA"); err != nil {
+		log.Printf("[Previsión] error guardando FONASA: %v", err)
+	}
+	return map[string]interface{}{
+		"respuesta":    mensajeFonasa(),
+		"nueva_sesion": map[string]interface{}{},
+	}
+}
+
+// manejarRespuestaIsapreParticular procesa la respuesta a "¿Es isapre o particular?"
+func (r *Router) manejarRespuestaIsapreParticular(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+	prev := detectarPrevisionNoFonasa(texto)
+	if prev == "" {
+		return map[string]interface{}{
+			"respuesta":    "¿Es isapre o particular?",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_isapre_particular"},
+		}
+	}
+	return r.resolverPrevisionNoFonasa(prev, paciente)
+}
+
+func (r *Router) resolverPrevisionNoFonasa(prev string, paciente *client.Patient) map[string]interface{} {
+	if prev == "ISAPRE" {
+		if err := r.patients.SetPrevision(paciente.ID, "ISAPRE"); err != nil {
+			log.Printf("[Previsión] error guardando ISAPRE: %v", err)
+		}
+		return map[string]interface{}{
+			"respuesta":    "Eso es distinto\n\n" + mensajeIsapre(),
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	if err := r.patients.SetPrevision(paciente.ID, "PARTICULAR"); err != nil {
+		log.Printf("[Previsión] error guardando PARTICULAR: %v", err)
+	}
+	return map[string]interface{}{
+		"respuesta":    mensajeParticular(),
+		"nueva_sesion": map[string]interface{}{},
+	}
+}
+
+// --- Mensajes EXACTOS del documento de fine-tuning (finetuning_compact_v3_felipe.md) ---
+
+func mensajeFonasa() string {
+	return "Las 10 sesiones por fonasa valen al rededor de 38.000 pesos. Para atenderse con fonasa el programa se compra en alguna sucursal de fonasa. Justo en la misma calle de mi consulta hay un fonasa para comprar bonos. (La sesión incluye corrientes analgésicas y ejercicios). Duración 50 min por sesión. Los informes y certificados kinésicos que necesites presentar a tu médico tratante o instituciones tienen un valor adicional de $10.000 pesos. (No incluidos en el bono fonasa)\n\n" +
+		"La dirección es San Antonio 418, piso 3. Oficina 306. Entre Monjitas y Merced. Santiago Centro.\n\n" +
+		"Horarios de atención es de Lunes, Miércoles y Viernes entre las 9:30am - 6pm.\n\n" +
+		"Para empezar la kine tiene que ir con estos códigos a cualquier fonasa de Santiago.\n\n" +
+		"Felipe Castillo\nRut 14199789-0\nCODIGOS:\n0601105x10 Atencion kinesiologico ambulatoria (10 sesiones)\n0601101x2 evaluaciones (2 evaluaciones una al inicio y otra al final)\n\n" +
+		"Fonasa atiende de lunes a viernes hasta las 2pm\n\n" +
+		"Cuando tenga el bono comprado me avisa para agendar."
+}
+
+func mensajeIsapre() string {
+	return "Beneficio Especial para Pacientes ISAPRE 💙\n\n" +
+		"Para obtener los mejores resultados en tu rehabilitación, hemos creado un programa preferencial de 10 sesiones.\n" +
+		"✅ Programa Completo de 10 Sesiones:\n$100.000\n" +
+		"⏱ Duración de cada sesión: 50 minutos\n" +
+		"📄 Entrega de boletas para reembolso en tu ISAPRE\n" +
+		"📝 Informe de evolución al finalizar el tratamiento\n\n" +
+		"💡 Al contratar el programa completo desde tu primera cita, aseguras la continuidad de tu tratamiento y mantienes un valor preferencial de $10.000 por sesión.\n\n" +
+		"⚠️ Las sesiones individuales tienen un valor de $15.000 cada una.\n\n" +
+		"La experiencia nos demuestra que los mejores resultados se obtienen cuando el tratamiento se realiza de forma continua y planificada, por lo que recomendamos aprovechar el programa completo desde el inicio."
+}
+
+func mensajeParticular() string {
+	return "Beneficio Especial para Pacientes Particulares 💙\n" +
+		"Invierte en tu recuperación con nuestro programa de tratamiento completo y accede a un valor preferencial.\n" +
+		"✅ Programa Completo de 10 Sesiones:\n$100.000\n" +
+		"⏱ Duración de cada sesión: 50 minutos\n" +
+		"📝 Informe de evolución al finalizar el tratamiento (si es requerido)\n\n" +
+		"💡 Al contratar el programa completo desde tu primera cita, obtienes un valor preferencial de solo $10.000 por sesión.\n\n" +
+		"⚠️ Las sesiones individuales tienen un valor de $15.000 cada una.\n\n" +
+		"Este programa está diseñado para favorecer la continuidad del tratamiento y obtener mejores resultados en el menor tiempo posible.\n\n" +
+		"📍 Atención en Santiago Centro 📱 Agenda tu evaluación y comienza tu recuperación hoy.\n" +
+		"Felipe Castillo – Kinesiólogo 💪\n\n" +
+		"Horarios de atención es de Lunes, miércoles y Viernes entre las 9.30am-6pm."
+}
+
+// mensajeConfirmacionCita diferencia FONASA (pedir bonos+orden) de
+// PARTICULAR/ISAPRE (aviso de cremas) — Bug #2.
+func mensajeConfirmacionCita(paciente *client.Patient, ficha *client.Ficha, fecha, hora string) string {
+	switch strings.ToUpper(paciente.Prevision) {
+	case "FONASA":
+		return fmt.Sprintf(
+			"Listo %s. Debe llevar los bonos ese día y la orden.\n\n📍 Hola %s, recuerde que tiene una cita el %s a las %s",
+			paciente.NombreCorto, paciente.NombreCorto, fecha, hora,
+		)
+	case "ISAPRE", "PARTICULAR":
+		zona := "zona afectada"
+		if ficha != nil && ficha.Diagnostico != "" {
+			zona = ficha.Diagnostico
+		}
+		return fmt.Sprintf(
+			"Entonces queda agendada.\nLleve ropa cómoda y zapatillas.\nNo se aplique cremas en la %s.\n\n📍 Hola %s, recuerde que tiene una cita el %s a las %s",
+			zona, paciente.NombreCorto, fecha, hora,
+		)
+	default:
+		// Previsión aún no registrada (paciente nunca pasó por el flujo de
+		// fonasa) — mensaje genérico de respaldo, mejor que fallar.
+		return fmt.Sprintf("Listo %s. Quedas agendado/a el %s a las %s.\nLleva ropa cómoda y zapatillas.", paciente.NombreCorto, fecha, hora)
 	}
 }
 

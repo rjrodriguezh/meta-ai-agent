@@ -61,6 +61,13 @@ func (r *PatientRepository) Deactivate(id uint) error {
 		Update("pac_estado", "INACTIVO").Error
 }
 
+// SetPrevision guarda la previsión del paciente (FONASA/ISAPRE/PARTICULAR)
+func (r *PatientRepository) SetPrevision(id uint, prevision string) error {
+	return r.db.Model(&model.Patient{}).
+		Where("pac_id = ?", id).
+		Update("pac_prevision", prevision).Error
+}
+
 func (r *PatientRepository) GetAll() ([]model.Patient, error) {
 	var patients []model.Patient
 	err := r.db.Order("pac_apellidos, pac_nombres").Find(&patients).Error

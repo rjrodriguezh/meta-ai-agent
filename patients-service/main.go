@@ -55,6 +55,7 @@ func main() {
 	app.Get("/patients/:id", patientH.GetByID)
 	app.Post("/patients", patientH.Create)
 	app.Put("/patients/:id", patientH.Update)
+	app.Put("/patients/:id/prevision", patientH.SetPrevision)
 	app.Delete("/patients/:id", patientH.Deactivate)
 
 	// --- Rutas de fichas ---

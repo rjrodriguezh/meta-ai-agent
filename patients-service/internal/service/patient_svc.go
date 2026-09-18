@@ -96,3 +96,10 @@ func (s *PatientService) Update(id uint, req model.UpdatePatientRequest) (*model
 func (s *PatientService) Deactivate(id uint) error {
 	return s.repo.Deactivate(id)
 }
+
+func (s *PatientService) SetPrevision(id uint, prevision string) error {
+	if prevision == "" {
+		return errors.New("previsión requerida")
+	}
+	return s.repo.SetPrevision(id, prevision)
+}

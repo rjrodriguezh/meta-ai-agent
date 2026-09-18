@@ -35,8 +35,14 @@ func NewClassifier(persona PersonaProvider) *Classifier {
 
 func (c *Classifier) Clasificar(texto, numero string, sesion map[string]interface{}) (*model.Intent, error) {
 	// Atajo rápido para reagendar (igual que Python)
+	// Incluye "no puedo ir" / "no voy a poder" (Bug #3): el documento espera
+	// que se ofrezca reagendar primero, no cancelar directo, cuando el
+	// paciente avisa que no puede asistir sin pedir cancelación explícita.
 	textoLower := strings.ToLower(strings.TrimSpace(texto))
-	for _, kw := range []string{"reagendar", "cambiar cita", "cambiar hora", "mover cita", "mover hora"} {
+	for _, kw := range []string{
+		"reagendar", "cambiar cita", "cambiar hora", "mover cita", "mover hora",
+		"no puedo ir", "no podre ir", "no podré ir", "no voy a poder", "no puedo asistir",
+	} {
 		if strings.Contains(textoLower, kw) {
 			return &model.Intent{
 				Intencion: "reagendar_hora",

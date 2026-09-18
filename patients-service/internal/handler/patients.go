@@ -99,6 +99,24 @@ func (h *PatientHandler) Update(c *fiber.Ctx) error {
 	return c.JSON(p)
 }
 
+// PUT /patients/:id/prevision  { "prevision": "FONASA" | "ISAPRE" | "PARTICULAR" }
+func (h *PatientHandler) SetPrevision(c *fiber.Ctx) error {
+	id, err := strconv.Atoi(c.Params("id"))
+	if err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "id inválido"})
+	}
+
+	var req model.UpdatePrevisionRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": "body inválido"})
+	}
+
+	if err := h.svc.SetPrevision(uint(id), req.Prevision); err != nil {
+		return c.Status(400).JSON(fiber.Map{"error": err.Error()})
+	}
+	return c.JSON(fiber.Map{"ok": true})
+}
+
 // DELETE /patients/:id  (soft delete → estado INACTIVO)
 func (h *PatientHandler) Deactivate(c *fiber.Ctx) error {
 	id, err := strconv.Atoi(c.Params("id"))

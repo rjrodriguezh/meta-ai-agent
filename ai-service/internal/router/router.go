@@ -41,15 +41,55 @@ func esEscape(texto string) bool {
 	return false
 }
 
+// esLeadInformacion detecta el mensaje típico de un lead nuevo desde
+// anuncios de Meta/Google ("quiero más información") — Flujo 1 del
+// documento, distinto de un saludo genérico (Bug #5).
+func esLeadInformacion(texto string) bool {
+	t := strings.ToLower(texto)
+	return strings.Contains(t, "mas informacion") || strings.Contains(t, "más información") ||
+		strings.Contains(t, "más info") || strings.Contains(t, "mas info")
+}
+
+// esConsultaDisponibilidad detecta preguntas por horas LIBRES reales
+// ("¿qué horarios tienes disponibles?"), distinto de preguntar el horario
+// general de atención ("¿a qué hora atienden?") — Bug #9.
+func esConsultaDisponibilidad(texto string) bool {
+	t := strings.ToLower(texto)
+	return strings.Contains(t, "disponible") || strings.Contains(t, "disponibilidad") ||
+		strings.Contains(t, "horas libres") || strings.Contains(t, "hay hora")
+}
+
+// esComandoMenu detecta si el mensaje ES (no solo contiene) una palabra de menú.
+// Coincidencia exacta a propósito: evita que frases como "necesito ayuda con
+// mi hombro" disparen el menú en vez de seguir el flujo normal.
+func esComandoMenu(texto string) bool {
+	t := strings.ToLower(strings.TrimSpace(texto))
+	switch t {
+	case "menu", "menú", "inicio", "ayuda", "opciones":
+		return true
+	}
+	return false
+}
+
 func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string]interface{}) map[string]interface{} {
 	textoOriginal := getString(intent.Datos, "texto_original")
 	seleccion := obtenerSeleccion(textoOriginal)
 	accionPendiente := getString(sesion, "accion_pendiente")
 
-	// --- Escape: resetea sesión desde cualquier estado ---
+	// --- Escape: resetea sesión desde cualquier estado a medias (mid-flujo) ---
 	if accionPendiente != "" && esEscape(textoOriginal) {
 		return map[string]interface{}{
 			"respuesta":    "Diga 😊",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+
+	// --- Comando de menú explícito fuera de un flujo: siempre muestra opciones.
+	// Usa coincidencia EXACTA (no "contains") para no capturar frases normales
+	// como "necesito ayuda con mi hombro".
+	if accionPendiente == "" && esComandoMenu(textoOriginal) {
+		return map[string]interface{}{
+			"respuesta":    "¿Qué necesitas?\n\n- Agendar una hora\n- Reagendar una hora\n- Cancelar una hora\n- Consultar tus horas",
 			"nueva_sesion": map[string]interface{}{},
 		}
 	}
@@ -86,6 +126,29 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 		}
 	}
 
+	// --- Continuar agendar_hora si estaba pendiente (evita que la fecha de
+	// seguimiento se malinterprete como reagendar_hora u otra intención) ---
+	if accionPendiente == "agendar_hora" {
+		return r.manejarAgendar(intent.Datos, sesion, paciente)
+	}
+
+	// --- Continuar flujo de previsión si estaba pendiente ---
+	if accionPendiente == "esperando_fonasa" {
+		return r.manejarRespuestaFonasa(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_tramo" {
+		return r.manejarRespuestaTramo(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_isapre_particular" {
+		return r.manejarRespuestaIsapreParticular(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_lado_diagnostico" {
+		return r.manejarLadoDiagnostico(intent, sesion, paciente)
+	}
+	if accionPendiente == "confirmar_ficha_nueva" {
+		return r.confirmarFichaNueva(intent, sesion, paciente)
+	}
+
 	// --- FAQ temporal (fine-tuning Felipe) — ver faq_felipe.go ---
 	if respuesta, ok := buscarFAQFelipe(textoOriginal); ok {
 		return map[string]interface{}{
@@ -94,13 +157,11 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 		}
 	}
 
-	// --- Diagnóstico con dos zonas/lados distintos → escalar a Felipe ---
-	if esBilateral(textoOriginal) {
-		return map[string]interface{}{
-			"respuesta":    "Gracias por la información, en un momento Felipe te contacta personalmente para coordinar su tratamiento.",
-			"nueva_sesion": map[string]interface{}{},
-		}
-	}
+	// NOTA: la detección de bilateral (esBilateral) se hace SOLO dentro de
+	// manejarCrearFicha, sobre el diagnóstico real — no acá sobre cualquier
+	// mensaje, porque " y "/" e " aparecen en frases normales sin relación
+	// a diagnósticos (ej. "dirección, horarios y códigos") y disparaban
+	// escaladas falsas que cortaban la conversación.
 
 	// --- Despachar por intención ---
 	switch intent.Intencion {
@@ -117,11 +178,35 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 	case "marcar_sesion_realizada":
 		return r.manejarMarcarRealizada(paciente)
 	case "saludo":
+		// Flujo 1 (lead desde Meta/Google): "quiero más información" no es un
+		// saludo genérico, es un lead nuevo — el documento pide bienvenida +
+		// preguntar por orden médica, no el menú de opciones (Bug #5).
+		if esLeadInformacion(textoOriginal) {
+			return map[string]interface{}{
+				"respuesta":    "¡Hola! 👋 Gracias por escribirnos.\n\n¿Tiene orden médica de derivación de Kinesiología?",
+				"nueva_sesion": map[string]interface{}{},
+			}
+		}
 		return map[string]interface{}{
 			"respuesta":    "¡Hola! 👋 ¿En qué puedo ayudarte?\n\nPuedo agendar, reagendar, cancelar o consultar tus horas.",
 			"nueva_sesion": map[string]interface{}{},
 		}
-	case "consulta_precio", "consulta_fonasa", "consulta_servicios", "ayuda":
+	case "consulta_precio", "consulta_fonasa":
+		// La respuesta ("¿Por fonasa?" + saludo) la sigue generando OpenAI con
+		// la persona completa (ya lo hace bien), pero ahora quedamos en un
+		// estado real (esperando_fonasa) para que la SIGUIENTE respuesta del
+		// paciente se procese de forma determinística en vez de perderse
+		// (Bug #1).
+		return map[string]interface{}{
+			"intencion":    intent.Intencion,
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_fonasa"},
+		}
+	case "consulta_servicios", "ayuda":
+		// "¿Qué horarios tienes disponibles?" pide disponibilidad REAL, no el
+		// horario general de atención — consultar el Calendar (Bug #9).
+		if intent.Intencion == "consulta_servicios" && esConsultaDisponibilidad(textoOriginal) {
+			return r.manejarConsultaDisponibilidad()
+		}
 		// Sin respuesta hardcodeada → Natural llama a OpenAI con la persona completa
 		return map[string]interface{}{
 			"intencion":    intent.Intencion,
