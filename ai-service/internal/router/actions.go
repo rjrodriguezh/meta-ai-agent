@@ -1006,17 +1006,36 @@ func (r *Router) resolverTramo(tramo string, paciente *client.Patient) map[strin
 			log.Printf("[Previsión] error guardando PARTICULAR (tramo A): %v", err)
 		}
 		return map[string]interface{}{
-			"respuesta":    "Ok. Entonces es particular.\n\n" + mensajeParticular(),
-			"nueva_sesion": map[string]interface{}{},
+			"respuesta":    "Ok. Entonces es particular.\n\n" + mensajeParticular() + mensajeOfrecerAgendar(),
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "ofreciendo_agendar_primera_cita"},
 		}
 	}
 	if err := r.patients.SetPrevision(paciente.ID, "FONASA"); err != nil {
 		log.Printf("[Previsión] error guardando FONASA: %v", err)
 	}
 	return map[string]interface{}{
-		"respuesta":    mensajeFonasa(),
-		"nueva_sesion": map[string]interface{}{},
+		"respuesta":    mensajeFonasa() + mensajeOfrecerAgendar(),
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "ofreciendo_agendar_primera_cita"},
 	}
+}
+
+// mensajeOfrecerAgendar se agrega al final del mensaje de previsión (FONASA/
+// ISAPRE/PARTICULAR) para encadenar directo a agendar la primera hora, en
+// vez de cortar la conversación después de mostrar los precios.
+func mensajeOfrecerAgendar() string {
+	return "\n\n¿Quieres agendar tu hora ahora?"
+}
+
+// manejarOfrecerAgendar procesa la respuesta a "¿Quieres agendar tu hora ahora?"
+func (r *Router) manejarOfrecerAgendar(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+	if esRespuestaNegativa(texto) {
+		return map[string]interface{}{
+			"respuesta":    "Ya, cualquier cosa me avisas. También puedo agendar, reagendar, cancelar o consultar tus horas.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	return r.manejarAgendar(map[string]interface{}{}, sesion, paciente)
 }
 
 // manejarRespuestaIsapreParticular procesa la respuesta a "¿Es isapre o particular?"
@@ -1038,16 +1057,16 @@ func (r *Router) resolverPrevisionNoFonasa(prev string, paciente *client.Patient
 			log.Printf("[Previsión] error guardando ISAPRE: %v", err)
 		}
 		return map[string]interface{}{
-			"respuesta":    "Eso es distinto\n\n" + mensajeIsapre(),
-			"nueva_sesion": map[string]interface{}{},
+			"respuesta":    "Eso es distinto\n\n" + mensajeIsapre() + mensajeOfrecerAgendar(),
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "ofreciendo_agendar_primera_cita"},
 		}
 	}
 	if err := r.patients.SetPrevision(paciente.ID, "PARTICULAR"); err != nil {
 		log.Printf("[Previsión] error guardando PARTICULAR: %v", err)
 	}
 	return map[string]interface{}{
-		"respuesta":    mensajeParticular(),
-		"nueva_sesion": map[string]interface{}{},
+		"respuesta":    mensajeParticular() + mensajeOfrecerAgendar(),
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "ofreciendo_agendar_primera_cita"},
 	}
 }
 

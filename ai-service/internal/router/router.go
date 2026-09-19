@@ -162,6 +162,9 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 	if accionPendiente == "esperando_isapre_particular" {
 		return r.manejarRespuestaIsapreParticular(intent, sesion, paciente)
 	}
+	if accionPendiente == "ofreciendo_agendar_primera_cita" {
+		return r.manejarOfrecerAgendar(intent, sesion, paciente)
+	}
 	if accionPendiente == "esperando_lado_diagnostico" {
 		return r.manejarLadoDiagnostico(intent, sesion, paciente)
 	}
