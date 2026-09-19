@@ -38,6 +38,9 @@ type Patient struct {
 	Telefono    string `json:"pac_telefono"`
 	Estado      string `json:"pac_estado"`
 	Prevision   string `json:"pac_prevision"`
+	Rut         string `json:"pac_rut"`
+	Peso        string `json:"pac_peso"`
+	Altura      string `json:"pac_altura"`
 }
 
 type Ficha struct {
@@ -153,6 +156,22 @@ func (c *PatientsClient) SetPrevision(pacID uint, prevision string) error {
 	return c.putJSON(fmt.Sprintf("/patients/%d/prevision", pacID), map[string]interface{}{
 		"prevision": prevision,
 	})
+}
+
+// SetRut/SetPeso/SetAltura — se guardan en llamadas separadas (una por turno
+// del registro guiado). patient_svc.Update trata estos 3 campos como
+// condicionales (solo se pisan si vienen no-vacíos), así que estas llamadas
+// no se borran entre sí aunque cada una solo mande un campo.
+func (c *PatientsClient) SetRut(pacID uint, rut string) error {
+	return c.putJSON(fmt.Sprintf("/patients/%d", pacID), map[string]interface{}{"rut": rut})
+}
+
+func (c *PatientsClient) SetPeso(pacID uint, peso string) error {
+	return c.putJSON(fmt.Sprintf("/patients/%d", pacID), map[string]interface{}{"peso": peso})
+}
+
+func (c *PatientsClient) SetAltura(pacID uint, altura string) error {
+	return c.putJSON(fmt.Sprintf("/patients/%d", pacID), map[string]interface{}{"altura": altura})
 }
 
 // IncrementarSesion — equivale a incrementar_sesion_realizada

@@ -52,6 +52,7 @@ services:
       - PATIENTS_SERVICE_URL=http://patients-service:8083
       - AGENDA_SERVICE_URL=http://agenda-service:8082
       - CALENDAR_SERVICE_URL=http://calendar-service:8085
+      - ACTIVITIES_SERVICE_URL=http://activities-service:8084
       - DASHBOARD_SERVICE_URL=http://dashboard-service:5000
       - CLINIC_LOCATION=${CLINIC_LOCATION:-Clínica de Kinesiología Felipe Castillo}
       - DB_PATH=/app/agenda.db

@@ -17,6 +17,9 @@ type Patient struct {
 	TelefonoEmergencia string    `gorm:"column:pac_telefono_emergencia"            json:"pac_telefono_emergencia"`
 	Estado             string    `gorm:"column:pac_estado;default:ACTIVO"          json:"pac_estado"`
 	Prevision          string    `gorm:"column:pac_prevision"                      json:"pac_prevision"`
+	Rut                string    `gorm:"column:pac_rut"                            json:"pac_rut"`
+	Peso               string    `gorm:"column:pac_peso"                           json:"pac_peso"`
+	Altura             string    `gorm:"column:pac_altura"                         json:"pac_altura"`
 	CreatedAt          time.Time `gorm:"column:pac_fecha_creacion"                 json:"pac_fecha_creacion"`
 }
 
@@ -37,6 +40,9 @@ type CreatePatientRequest struct {
 	Comuna             string `json:"comuna"`
 	ContactoEmergencia string `json:"contacto_emergencia"`
 	TelefonoEmergencia string `json:"telefono_emergencia"`
+	Rut                string `json:"rut"`
+	Peso               string `json:"peso"`
+	Altura             string `json:"altura"`
 }
 
 type UpdatePatientRequest struct {
@@ -50,6 +56,9 @@ type UpdatePatientRequest struct {
 	Comuna             string `json:"comuna"`
 	ContactoEmergencia string `json:"contacto_emergencia"`
 	TelefonoEmergencia string `json:"telefono_emergencia"`
+	Rut                string `json:"rut"`
+	Peso               string `json:"peso"`
+	Altura             string `json:"altura"`
 }
 
 // UpdatePrevisionRequest — usado por ai-service para guardar la previsión

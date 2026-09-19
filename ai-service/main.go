@@ -23,15 +23,16 @@ func main() {
 	db := database.Connect()
 
 	// Clientes HTTP hacia otros servicios
-	patientsClient  := client.NewPatientsClient()
-	agendaClient    := client.NewAgendaClient()
-	configClient    := client.NewConfigClient()
-	calendarClient  := client.NewCalendarClient()
+	patientsClient   := client.NewPatientsClient()
+	agendaClient     := client.NewAgendaClient()
+	configClient     := client.NewConfigClient()
+	calendarClient   := client.NewCalendarClient()
+	activitiesClient := client.NewActivitiesClient()
 
 	// Componentes internos
 	sessionStore    := session.NewStore(db)
 	classifier      := intent.NewClassifier(configClient)
-	actionRouter    := router.NewRouter(patientsClient, agendaClient, calendarClient)
+	actionRouter    := router.NewRouter(patientsClient, agendaClient, calendarClient, activitiesClient)
 	naturalResponder := responder.NewNatural(configClient)
 
 	// Handler principal

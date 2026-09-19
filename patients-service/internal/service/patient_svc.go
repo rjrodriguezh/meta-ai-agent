@@ -37,6 +37,9 @@ func (s *PatientService) Create(req model.CreatePatientRequest) (*model.Patient,
 		Comuna:             req.Comuna,
 		ContactoEmergencia: req.ContactoEmergencia,
 		TelefonoEmergencia: req.TelefonoEmergencia,
+		Rut:                req.Rut,
+		Peso:               req.Peso,
+		Altura:             req.Altura,
 		Estado:             "ACTIVO",
 	}
 
@@ -86,6 +89,21 @@ func (s *PatientService) Update(id uint, req model.UpdatePatientRequest) (*model
 	p.Comuna             = req.Comuna
 	p.ContactoEmergencia = req.ContactoEmergencia
 	p.TelefonoEmergencia = req.TelefonoEmergencia
+
+	// Rut/Peso/Altura se actualizan de forma CONDICIONAL (a diferencia de los
+	// campos de arriba) porque ai-service los guarda en llamadas separadas,
+	// una por turno de la conversación (primero rut, después peso, después
+	// altura) — si fueran incondicionales, cada llamada borraría el valor
+	// que la llamada anterior acababa de guardar.
+	if req.Rut != "" {
+		p.Rut = req.Rut
+	}
+	if req.Peso != "" {
+		p.Peso = req.Peso
+	}
+	if req.Altura != "" {
+		p.Altura = req.Altura
+	}
 
 	if err := s.repo.Update(p); err != nil {
 		return nil, err

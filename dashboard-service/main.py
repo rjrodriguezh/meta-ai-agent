@@ -325,6 +325,10 @@ def nav():
                     <a href="/ejercicios" class="drop-item">Biblioteca de ejercicios</a>
                     <a href="/ejercicios/nuevo" class="drop-item">+ Nuevo ejercicio</a>
                     <div class="drop-divider"></div>
+                    <div class="drop-label">🩺 Diagnósticos</div>
+                    <a href="/diagnosticos" class="drop-item">Lista de diagnósticos</a>
+                    <a href="/diagnosticos/nuevo" class="drop-item">+ Nuevo diagnóstico</a>
+                    <div class="drop-divider"></div>
                     <div class="drop-label">🤖 Bot WhatsApp</div>
                     <a href="/configuracion/bot" class="drop-item">⚙ Configurar personalidad</a>
                 </div>
@@ -651,13 +655,17 @@ def fichas_page(estado: str = Query(""), q: str = Query("")):
         else:
             badge = '<span style="background:#9ca3af;color:white;padding:2px 10px;border-radius:10px;font-size:12px">FINALIZADA</span>'
 
+        diag_txt = f.get('fic_diagnostico','')
         rows += f"""<tr>
             <td><a href="/pacientes/{p['pac_id']}" style="color:#075e54;font-weight:600">{p.get('pac_nombre_corto') or p.get('pac_nombres','—')}</a></td>
-            <td>{f.get('fic_diagnostico','—')}</td>
+            <td>{diag_txt or '—'}</td>
             <td>{badge}</td>
             <td style="text-align:center">{f.get('fic_cantidad_sesiones',0)}</td>
             <td style="font-size:12px;color:#6b7280">{f.get('fic_observacion','') or '—'}</td>
-            <td><a href="/pacientes/{p['pac_id']}" class="btn" style="font-size:12px;padding:4px 10px">Ver</a></td>
+            <td style="white-space:nowrap">
+                <a href="/pacientes/{p['pac_id']}" class="btn" style="font-size:12px;padding:4px 10px">Ver</a>
+                <a href="/ejercicios/por-diagnostico?texto={quote(diag_txt)}" class="btn" style="font-size:12px;padding:4px 10px;background:#7c3aed">🏋 Ejercicios</a>
+            </td>
         </tr>"""
 
     contenido = f"""
@@ -2569,6 +2577,58 @@ def youtube_embed(url: str) -> str:
         return f'<iframe width="280" height="157" src="https://www.youtube.com/embed/{vid}" frameborder="0" allowfullscreen style="border-radius:8px"></iframe>'
     return f'<a href="{url}" target="_blank" class="btn" style="font-size:12px">▶ Ver video</a>'
 
+@app.get("/ejercicios/por-diagnostico", response_class=HTMLResponse)
+def ejercicios_por_diagnostico(texto: str = Query("")):
+    """Muestra los ejercicios asignados al tipo de diagnóstico que mejor
+    coincide con el texto libre de una ficha (mismo matching que usa el bot
+    de WhatsApp vía GET /diagnosticos/buscar en activities-service)."""
+    diag = None
+    if texto:
+        try:
+            r = requests.get(f"{ACTIVITIES_URL}/diagnosticos/buscar", params={"texto": texto}, timeout=3)
+            if r.status_code == 200:
+                diag = r.json()
+        except Exception:
+            diag = None
+
+    if diag:
+        ejercicios = diag.get("ejercicios") or []
+        rows = ""
+        for e in ejercicios:
+            video = youtube_embed(e.get("eje_link_youtube","")) if e.get("eje_link_youtube") else "—"
+            rows += f"""<tr>
+                <td style="font-weight:600">{e.get('eje_nombre','—')}</td>
+                <td style="text-align:center">{e.get('eje_series',0)}</td>
+                <td style="text-align:center">{e.get('eje_repeticiones',0)}</td>
+                <td style="font-size:12px;color:#6b7280">{e.get('eje_detalle','') or '—'}</td>
+                <td>{video}</td>
+            </tr>"""
+        tabla = f"""
+        <table>
+            <thead><tr><th>Ejercicio</th><th>Series</th><th>Reps</th><th>Detalle</th><th>Video</th></tr></thead>
+            <tbody>{rows if rows else '<tr><td colspan="5" style="color:#aaa;padding:20px;text-align:center">Este diagnóstico todavía no tiene ejercicios asociados</td></tr>'}</tbody>
+        </table>"""
+        titulo = f"Ejercicios — {diag.get('diag_nombre','')}"
+        subtitulo = f'<p style="color:#6b7280;margin-top:0">Diagnóstico de la ficha: <b>{texto}</b> → coincide con <b>{diag.get("diag_nombre","")}</b></p>'
+    else:
+        tabla = ""
+        titulo = "Ejercicios por diagnóstico"
+        subtitulo = (
+            f'<div style="background:#fffbeb;border:1px solid #f59e0b;border-radius:10px;padding:14px 18px;color:#92400e">'
+            f'No hay ningún tipo de diagnóstico cargado que coincida con "<b>{texto}</b>". '
+            f'Puedes crear uno nuevo y asociarle ejercicios desde la <a href="/ejercicios">biblioteca de ejercicios</a>.'
+            f'</div>'
+        )
+
+    contenido = f"""
+    <div style="margin-bottom:16px"><a href="/fichas" class="btn" style="background:#6b7280">← Volver a fichas</a></div>
+    <h1 style="margin-bottom:4px">{titulo}</h1>
+    {subtitulo}
+    <div style="margin-top:20px">{tabla}</div>
+    """
+    return layout("Ejercicios por diagnóstico", contenido)
+
+
 @app.get("/ejercicios", response_class=HTMLResponse)
 def ejercicios_page(q: str = Query(""), categoria: str = Query("")):
     try:
@@ -2754,6 +2814,191 @@ def editar_ejercicio_save(
 def eliminar_ejercicio(eje_id: int):
     requests.delete(f"{ACTIVITIES_URL}/ejercicios/{eje_id}", timeout=3)
     return RedirectResponse(url="/ejercicios", status_code=303)
+
+# ── diagnósticos (administrador: qué ejercicios trae cada diagnóstico) ─────
+
+@app.get("/diagnosticos", response_class=HTMLResponse)
+def diagnosticos_page(q: str = Query("")):
+    try:
+        items = requests.get(f"{ACTIVITIES_URL}/diagnosticos", timeout=3).json()
+    except Exception:
+        items = []
+
+    if q:
+        ql = q.lower()
+        items = [d for d in items if ql in d.get("diag_nombre","").lower() or ql in d.get("diag_zona","").lower()]
+
+    rows = ""
+    for d in items:
+        ejercicios = d.get("ejercicios") or []
+        nombres_ej = ", ".join(e.get("eje_nombre","") for e in ejercicios[:3])
+        if len(ejercicios) > 3:
+            nombres_ej += f" (+{len(ejercicios)-3})"
+        zona_badge = (f'<span style="background:#e0e7ff;color:#3730a3;padding:2px 8px;'
+                      f'border-radius:10px;font-size:11px">{d.get("diag_zona","")}</span>') if d.get("diag_zona") else "—"
+        rows += f"""<tr>
+            <td style="font-weight:600">{d.get('diag_nombre','—')}</td>
+            <td>{zona_badge}</td>
+            <td style="font-size:12px;color:#6b7280">{nombres_ej or '<em style="color:#d1d5db">Sin ejercicios</em>'}</td>
+            <td style="text-align:center">{len(ejercicios)}</td>
+            <td style="white-space:nowrap">
+                <a href="/diagnosticos/{d.get('diag_id')}/editar" class="btn" style="font-size:12px;padding:4px 10px;background:#6b7280">✏ Editar</a>
+                <form method="post" action="/diagnosticos/{d.get('diag_id')}/eliminar" style="display:inline">
+                    <button class="btn btn-danger" style="font-size:12px;padding:4px 10px"
+                        onclick="return confirm('¿Eliminar este diagnóstico?')">🗑</button>
+                </form>
+            </td>
+        </tr>"""
+
+    contenido = f"""
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+        <h1 style="margin:0">🩺 Diagnósticos</h1>
+        <a href="/diagnosticos/nuevo" class="btn">+ Nuevo diagnóstico</a>
+    </div>
+    <form action="/diagnosticos" method="get" style="margin-bottom:20px">
+        <div style="display:flex;gap:8px;max-width:480px">
+            <input name="q" value="{q}" placeholder="Buscar por nombre o zona..." style="flex:1;margin:0;padding:9px 14px">
+            <button class="btn" type="submit">Buscar</button>
+            {'<a href="/diagnosticos" class="btn" style="background:#6b7280">✕</a>' if q else ''}
+        </div>
+    </form>
+    <table>
+        <thead><tr><th>Diagnóstico</th><th>Zona</th><th>Ejercicios</th><th style="text-align:center">#</th><th></th></tr></thead>
+        <tbody>{rows if rows else '<tr><td colspan="5" style="color:#aaa;padding:20px;text-align:center">Sin diagnósticos registrados</td></tr>'}</tbody>
+    </table>
+    <p style="color:#9ca3af;font-size:12px;margin-top:8px">{len(items)} diagnósticos</p>
+    """
+    return layout("Diagnósticos", contenido)
+
+
+def _ejercicios_checklist(seleccionados: set) -> str:
+    """Checklist de ejercicios agrupado por categoría, marcando los que ya
+    estén en `seleccionados` (set de eje_id) — usado en crear/editar diagnóstico."""
+    try:
+        todos = requests.get(f"{ACTIVITIES_URL}/ejercicios", timeout=3).json()
+    except Exception:
+        todos = []
+
+    por_categoria = {}
+    for e in todos:
+        cat = e.get("eje_categoria") or "Sin categoría"
+        por_categoria.setdefault(cat, []).append(e)
+
+    html = ""
+    for cat in sorted(por_categoria.keys()):
+        html += (f'<div style="font-weight:700;font-size:12px;color:#6b7280;'
+                 f'text-transform:uppercase;margin:14px 0 6px">{cat}</div>')
+        for e in por_categoria[cat]:
+            eje_id = e.get("eje_id")
+            checked = "checked" if eje_id in seleccionados else ""
+            html += f"""
+            <label style="display:flex;align-items:center;gap:8px;padding:6px 0;font-weight:normal;cursor:pointer">
+                <input type="checkbox" name="ejercicio_ids" value="{eje_id}" {checked} style="width:auto;margin:0">
+                {e.get('eje_nombre','')}
+            </label>"""
+    return html or '<p style="color:#9ca3af;font-size:13px">No hay ejercicios cargados todavía. <a href="/ejercicios/nuevo">Crear uno</a>.</p>'
+
+
+@app.get("/diagnosticos/nuevo", response_class=HTMLResponse)
+def nuevo_diagnostico_form():
+    checklist = _ejercicios_checklist(set())
+    contenido = f"""
+    <h1>Nuevo diagnóstico</h1>
+    <div class="form-card" style="max-width:640px">
+        <form method="post" action="/diagnosticos/nuevo">
+            <label>Nombre <span style="color:#b91c1c">*</span></label>
+            <input name="nombre" required placeholder="Ej: Esguince de tobillo">
+
+            <label>Zona</label>
+            <input name="zona" placeholder="Ej: Tobillo / Pie, Rodilla, Hombro...">
+
+            <label>Palabras clave (separadas por coma)</label>
+            <input name="keywords" placeholder="Ej: esguince de tobillo,esguince tobillo">
+            <p style="color:#9ca3af;font-size:12px;margin:-10px 0 16px">
+                El bot de WhatsApp usa estas palabras para reconocer este diagnóstico en lo que escribe el paciente.
+            </p>
+
+            <label>Ejercicios asociados</label>
+            <div style="max-height:320px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+                {checklist}
+            </div>
+
+            <button type="submit" class="btn">✓ Guardar diagnóstico</button>
+            &nbsp;<a href="/diagnosticos" style="color:#888">Cancelar</a>
+        </form>
+    </div>
+    """
+    return layout("Nuevo Diagnóstico", contenido)
+
+
+@app.post("/diagnosticos/nuevo")
+def nuevo_diagnostico_save(
+    nombre: str = Form(...),
+    zona: str = Form(""),
+    keywords: str = Form(""),
+    ejercicio_ids: list[int] = Form(default=[])
+):
+    body = {"nombre": nombre, "zona": zona, "keywords": keywords, "ejercicio_ids": ejercicio_ids}
+    requests.post(f"{ACTIVITIES_URL}/diagnosticos", json=body, timeout=3)
+    return RedirectResponse(url="/diagnosticos", status_code=303)
+
+
+@app.get("/diagnosticos/{diag_id}/editar", response_class=HTMLResponse)
+def editar_diagnostico_form(diag_id: int):
+    try:
+        d = requests.get(f"{ACTIVITIES_URL}/diagnosticos/{diag_id}", timeout=3).json()
+    except Exception:
+        return RedirectResponse(url="/diagnosticos", status_code=303)
+
+    seleccionados = {e.get("eje_id") for e in (d.get("ejercicios") or [])}
+    checklist = _ejercicios_checklist(seleccionados)
+
+    contenido = f"""
+    <h1>Editar diagnóstico</h1>
+    <div class="form-card" style="max-width:640px">
+        <form method="post" action="/diagnosticos/{diag_id}/editar">
+            <label>Nombre <span style="color:#b91c1c">*</span></label>
+            <input name="nombre" required value="{d.get('diag_nombre','')}">
+
+            <label>Zona</label>
+            <input name="zona" value="{d.get('diag_zona','')}">
+
+            <label>Palabras clave (separadas por coma)</label>
+            <input name="keywords" value="{d.get('diag_keywords','')}">
+            <p style="color:#9ca3af;font-size:12px;margin:-10px 0 16px">
+                El bot de WhatsApp usa estas palabras para reconocer este diagnóstico en lo que escribe el paciente.
+            </p>
+
+            <label>Ejercicios asociados</label>
+            <div style="max-height:320px;overflow-y:auto;border:1px solid #e5e7eb;border-radius:8px;padding:12px 16px;margin-bottom:16px">
+                {checklist}
+            </div>
+
+            <button type="submit" class="btn" style="background:#6b7280">✏ Guardar cambios</button>
+            &nbsp;<a href="/diagnosticos" style="color:#888">Cancelar</a>
+        </form>
+    </div>
+    """
+    return layout("Editar Diagnóstico", contenido)
+
+
+@app.post("/diagnosticos/{diag_id}/editar")
+def editar_diagnostico_save(
+    diag_id: int,
+    nombre: str = Form(...),
+    zona: str = Form(""),
+    keywords: str = Form(""),
+    ejercicio_ids: list[int] = Form(default=[])
+):
+    body = {"nombre": nombre, "zona": zona, "keywords": keywords, "ejercicio_ids": ejercicio_ids}
+    requests.put(f"{ACTIVITIES_URL}/diagnosticos/{diag_id}", json=body, timeout=3)
+    return RedirectResponse(url="/diagnosticos", status_code=303)
+
+
+@app.post("/diagnosticos/{diag_id}/eliminar")
+def eliminar_diagnostico(diag_id: int):
+    requests.delete(f"{ACTIVITIES_URL}/diagnosticos/{diag_id}", timeout=3)
+    return RedirectResponse(url="/diagnosticos", status_code=303)
 
 # ── Configuración del Bot ───────────────────────────────────────────────────
 

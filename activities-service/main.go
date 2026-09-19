@@ -23,6 +23,10 @@ func main() {
 	svc := service.NewEjercicioService(repo)
 	h := handler.NewEjercicioHandler(svc)
 
+	diagRepo := repository.NewDiagnosticoRepository(db)
+	diagSvc := service.NewDiagnosticoService(diagRepo)
+	diagH := handler.NewDiagnosticoHandler(diagSvc)
+
 	app := fiber.New(fiber.Config{
 		AppName: "activities-service v1.0",
 	})
@@ -44,6 +48,14 @@ func main() {
 	app.Post("/ejercicios", h.Create)
 	app.Put("/ejercicios/:id", h.Update)
 	app.Delete("/ejercicios/:id", h.Delete)
+
+	// CRUD diagnósticos (tipo de diagnóstico -> ejercicios asociados)
+	app.Get("/diagnosticos/buscar", diagH.Buscar) // antes de /:id
+	app.Get("/diagnosticos", diagH.GetAll)
+	app.Get("/diagnosticos/:id", diagH.GetByID)
+	app.Post("/diagnosticos", diagH.Create)
+	app.Put("/diagnosticos/:id", diagH.Update)
+	app.Delete("/diagnosticos/:id", diagH.Delete)
 
 	port := os.Getenv("ACTIVITIES_PORT")
 	if port == "" {

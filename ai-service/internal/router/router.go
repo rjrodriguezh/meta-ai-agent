@@ -10,18 +10,20 @@ import (
 
 // Router despacha cada intención al handler correcto.
 type Router struct {
-	patients  *client.PatientsClient
-	agenda    *client.AgendaClient
-	calendar  *client.CalendarClient
-	dashboard *client.DashboardClient
+	patients   *client.PatientsClient
+	agenda     *client.AgendaClient
+	calendar   *client.CalendarClient
+	activities *client.ActivitiesClient
+	dashboard  *client.DashboardClient
 }
 
-func NewRouter(patients *client.PatientsClient, agenda *client.AgendaClient, calendar *client.CalendarClient) *Router {
+func NewRouter(patients *client.PatientsClient, agenda *client.AgendaClient, calendar *client.CalendarClient, activities *client.ActivitiesClient) *Router {
 	return &Router{
-		patients:  patients,
-		agenda:    agenda,
-		calendar:  calendar,
-		dashboard: client.NewDashboardClient(),
+		patients:   patients,
+		agenda:     agenda,
+		calendar:   calendar,
+		activities: activities,
+		dashboard:  client.NewDashboardClient(),
 	}
 }
 
@@ -57,6 +59,24 @@ func esConsultaDisponibilidad(texto string) bool {
 	t := strings.ToLower(texto)
 	return strings.Contains(t, "disponible") || strings.Contains(t, "disponibilidad") ||
 		strings.Contains(t, "horas libres") || strings.Contains(t, "hay hora")
+}
+
+// esConsultaEjercicios detecta si el paciente está pidiendo los ejercicios
+// asignados a su tratamiento (ej. "¿qué ejercicios me tocan?", "mándame mi
+// rutina"). Se revisa como una regla determinística (no depende de que el
+// clasificador de OpenAI la reconozca como una intención propia).
+func esConsultaEjercicios(texto string) bool {
+	t := strings.ToLower(texto)
+	disparadores := []string{
+		"ejercicio", "ejercicios", "mi rutina", "la rutina",
+		"que hago en casa", "qué hago en casa",
+	}
+	for _, d := range disparadores {
+		if strings.Contains(t, d) {
+			return true
+		}
+	}
+	return false
 }
 
 // esComandoMenu detecta si el mensaje ES (no solo contiene) una palabra de menú.
@@ -148,6 +168,25 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 	if accionPendiente == "confirmar_ficha_nueva" {
 		return r.confirmarFichaNueva(intent, sesion, paciente)
 	}
+	// --- Registro extendido (RUT/peso/altura) + diagnóstico guiado por zona ---
+	if accionPendiente == "esperando_rut" {
+		return r.manejarEsperandoRut(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_peso" {
+		return r.manejarEsperandoPeso(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_altura" {
+		return r.manejarEsperandoAltura(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_diagnostico" {
+		return r.manejarEsperandoDiagnostico(intent, sesion, paciente)
+	}
+	if accionPendiente == "confirmar_diagnostico_sugerido" {
+		return r.confirmarDiagnosticoSugerido(intent, sesion, paciente)
+	}
+	if accionPendiente == "esperando_eleccion_diagnostico" {
+		return r.manejarEleccionDiagnostico(intent, sesion, paciente)
+	}
 
 	// --- FAQ temporal (fine-tuning Felipe) — ver faq_felipe.go ---
 	if respuesta, ok := buscarFAQFelipe(textoOriginal); ok {
@@ -155,6 +194,11 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 			"respuesta":    respuesta,
 			"nueva_sesion": map[string]interface{}{},
 		}
+	}
+
+	// --- Consulta de ejercicios asignados a la ficha activa ---
+	if esConsultaEjercicios(textoOriginal) {
+		return r.manejarConsultaEjercicios(paciente)
 	}
 
 	// NOTA: la detección de bilateral (esBilateral) se hace SOLO dentro de
@@ -174,6 +218,16 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 	case "consultar_horas", "consultar_sesiones":
 		return r.manejarConsultar(paciente)
 	case "crear_ficha":
+		// NOTA: esta rama es para un paciente YA registrado que en cualquier
+		// momento de la conversación menciona una lesión/diagnóstico nuevo
+		// (ej. "tengo dolor de rodilla" semanas después de su registro). Ahí
+		// se mantiene el flujo histórico: primero se verifica si ya tiene una
+		// ficha activa (Bug #6) antes de preguntar nada de diagnóstico — no
+		// tiene sentido mostrarle el menú de zonas si ya tiene tratamiento
+		// en curso y lo primero es resolver ese conflicto.
+		// El flujo guiado por zona / "¿quisiste decir X?" (iniciarFlujoDiagnostico)
+		// se usa en el registro de pacientes NUEVOS, ver completarRegistroPaciente
+		// -> esperando_rut -> esperando_peso -> esperando_altura.
 		return r.manejarCrearFicha(intent.Datos, paciente)
 	case "marcar_sesion_realizada":
 		return r.manejarMarcarRealizada(paciente)

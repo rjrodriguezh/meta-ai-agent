@@ -24,7 +24,7 @@ func Connect() *gorm.DB {
 		log.Fatalf("[DB] Error al conectar: %v", err)
 	}
 
-	if err := db.AutoMigrate(&model.Ejercicio{}); err != nil {
+	if err := db.AutoMigrate(&model.Ejercicio{}, &model.Diagnostico{}); err != nil {
 		log.Fatalf("[DB] Error en AutoMigrate: %v", err)
 	}
 

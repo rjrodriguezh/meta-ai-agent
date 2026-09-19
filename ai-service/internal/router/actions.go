@@ -794,8 +794,13 @@ func (r *Router) crearFichaYPreguntarFonasa(paciente *client.Patient, diagnostic
 	if err != nil {
 		return map[string]interface{}{"respuesta": "No pude crear la ficha.", "nueva_sesion": map[string]interface{}{}}
 	}
+	mensaje := fmt.Sprintf("Listo, ficha creada por %s (%d sesiones).", ficha.Diagnostico, ficha.CantidadSesiones)
+	if d, ok := r.resolverTextoDiagnostico(ficha.Diagnostico); ok && len(d.Ejercicios) > 0 {
+		mensaje += fmt.Sprintf(" Incluye %d ejercicios que te iré enviando para que hagas en casa.", len(d.Ejercicios))
+	}
+	mensaje += "\n\n¿Por fonasa? Así te paso los precios."
 	return map[string]interface{}{
-		"respuesta":    fmt.Sprintf("Listo, ficha creada por %s con %d sesiones.\n\n¿Por fonasa?", ficha.Diagnostico, ficha.CantidadSesiones),
+		"respuesta":    mensaje,
 		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_fonasa"},
 	}
 }
@@ -821,6 +826,51 @@ func (r *Router) confirmarFichaNueva(intent *model.Intent, sesion map[string]int
 	}
 	return map[string]interface{}{
 		"respuesta":    "Oka, seguimos con tu ficha activa entonces.",
+		"nueva_sesion": map[string]interface{}{},
+	}
+}
+
+// manejarConsultaEjercicios responde con los ejercicios recomendados para el
+// diagnóstico de la ficha activa del paciente (catálogo diagnóstico↔ejercicio
+// de activities-service). Si no hay ficha activa, o el servicio no tiene un
+// diagnóstico cargado que matchee, responde con un mensaje de respaldo en
+// vez de fallar en silencio.
+func (r *Router) manejarConsultaEjercicios(paciente *client.Patient) map[string]interface{} {
+	ficha, err := r.patients.GetFichaActiva(paciente.ID)
+	if err != nil || ficha == nil {
+		return map[string]interface{}{
+			"respuesta":    "Todavía no tienes una ficha activa. Cuéntame tu diagnóstico primero.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	if r.activities == nil || !r.activities.Disponible() {
+		return map[string]interface{}{
+			"respuesta":    "Por ahora no tengo tus ejercicios cargados acá. Pregúntale a Felipe en tu próxima sesión.",
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+	diag, err := r.activities.BuscarPorDiagnostico(ficha.Diagnostico)
+	if err != nil || diag == nil || len(diag.Ejercicios) == 0 {
+		return map[string]interface{}{
+			"respuesta":    fmt.Sprintf("Por ahora no tengo ejercicios específicos cargados para %s. Pregúntale a Felipe en tu próxima sesión.", ficha.Diagnostico),
+			"nueva_sesion": map[string]interface{}{},
+		}
+	}
+
+	texto := fmt.Sprintf("Estos son tus ejercicios para %s:\n\n", ficha.Diagnostico)
+	max := len(diag.Ejercicios)
+	if max > 5 {
+		max = 5
+	}
+	for _, e := range diag.Ejercicios[:max] {
+		texto += fmt.Sprintf("• %s — %d series x %d rep.", e.Nombre, e.Series, e.Repeticiones)
+		if e.LinkYoutube != "" {
+			texto += fmt.Sprintf("\n  %s", e.LinkYoutube)
+		}
+		texto += "\n\n"
+	}
+	return map[string]interface{}{
+		"respuesta":    strings.TrimSpace(texto),
 		"nueva_sesion": map[string]interface{}{},
 	}
 }
@@ -1074,9 +1124,257 @@ func (r *Router) completarRegistroPaciente(numero string, intent *model.Intent, 
 	if err != nil {
 		return map[string]interface{}{"respuesta": "No pude registrarte. Intenta nuevamente.", "nueva_sesion": sesion}
 	}
+	// Registro extendido: después del nombre pedimos RUT (obligatorio) y
+	// luego peso/altura (opcionales, el paciente puede responder "no" para
+	// omitirlos). El teléfono NO se pregunta — ya lo capturamos de WhatsApp.
 	return map[string]interface{}{
-		"respuesta": fmt.Sprintf("Listo, %s. Ya te registré.\n\nDime tu lesión o diagnóstico.", partes[0]),
-		"nueva_sesion": map[string]interface{}{"accion_pendiente": "crear_ficha", "pac_id": paciente.ID},
-		"pac_id": paciente.ID,
+		"respuesta":    fmt.Sprintf("Listo, %s. Ya te registré.\n\n¿Cuál es tu RUT?", partes[0]),
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_rut", "pac_id": paciente.ID},
+		"pac_id":       paciente.ID,
 	}
+}
+
+// manejarEsperandoRut guarda el RUT (texto libre, sin validar formato ni
+// dígito verificador — consistente con no forzar formatos que no pidió el
+// paciente) y sigue con peso (opcional).
+func (r *Router) manejarEsperandoRut(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	rut := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	if rut == "" {
+		return map[string]interface{}{
+			"respuesta":    "Necesito tu RUT para continuar. ¿Cuál es tu RUT?",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_rut"},
+		}
+	}
+	if err := r.patients.SetRut(paciente.ID, rut); err != nil {
+		log.Printf("[Registro] error guardando RUT de paciente %d: %v", paciente.ID, err)
+	}
+	return map[string]interface{}{
+		"respuesta":    "¿Cuál es tu peso? (opcional, puedes responder \"no\" para omitirlo)",
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_peso"},
+	}
+}
+
+// manejarEsperandoPeso guarda el peso si el paciente lo entrega, o lo omite
+// si responde negativamente — en ambos casos sigue con altura.
+func (r *Router) manejarEsperandoPeso(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	if texto != "" && !esRespuestaNegativa(texto) {
+		if err := r.patients.SetPeso(paciente.ID, texto); err != nil {
+			log.Printf("[Registro] error guardando peso de paciente %d: %v", paciente.ID, err)
+		}
+	}
+	return map[string]interface{}{
+		"respuesta":    "¿Cuál es tu altura? (opcional, puedes responder \"no\" para omitirla)",
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_altura"},
+	}
+}
+
+// manejarEsperandoAltura guarda la altura si corresponde y luego arranca el
+// flujo de diagnóstico guiado por zona (sin texto todavía, así que siempre
+// muestra el menú de zonas).
+func (r *Router) manejarEsperandoAltura(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	if texto != "" && !esRespuestaNegativa(texto) {
+		if err := r.patients.SetAltura(paciente.ID, texto); err != nil {
+			log.Printf("[Registro] error guardando altura de paciente %d: %v", paciente.ID, err)
+		}
+	}
+	return r.iniciarFlujoDiagnostico("", paciente)
+}
+
+// --- Diagnóstico guiado por zona ---
+//
+// En vez de aceptar cualquier texto libre como diagnóstico, ahora:
+//  1. Si el paciente ya escribió algo que matchea un diagnóstico del
+//     catálogo (activities-service), se lo confirmamos ("¿Quisiste decir X?").
+//  2. Si no, le preguntamos en qué zona del cuerpo tiene la lesión y le
+//     mostramos como menú los diagnósticos asociados a esa zona.
+//  3. Si tampoco reconocemos una zona, seguimos con el flujo anterior
+//     (crear la ficha con el texto tal cual, pasando por detección de
+//     bilateral/lado) para no bloquear al paciente.
+
+// zonaAliases traduce palabras que el paciente diría naturalmente ("cuello",
+// "espalda baja", "poto") a la zona canónica usada en el catálogo de
+// diagnósticos (ver activities-service/seed_diagnosticos.py).
+var zonaAliases = map[string]string{
+	"cuello":       "Cabeza / Cuello",
+	"nuca":         "Cabeza / Cuello",
+	"cervical":     "Cabeza / Cuello",
+	"cabeza":       "Cabeza / Cuello",
+	"hombro":       "Hombro",
+	"brazo":        "Brazo / Codo",
+	"codo":         "Brazo / Codo",
+	"muneca":       "Muñeca / Mano",
+	"mano":         "Muñeca / Mano",
+	"espalda baja": "Core / Abdomen",
+	"lumbar":       "Core / Abdomen",
+	"lumbago":      "Core / Abdomen",
+	"espalda":      "Core / Abdomen",
+	"core":         "Core / Abdomen",
+	"abdomen":      "Core / Abdomen",
+	"cadera":       "Cadera",
+	"pelvis":       "Cadera",
+	"poto":         "Cadera",
+	"gluteo":       "Cadera",
+	"rodilla":      "Rodilla",
+	"tobillo":      "Tobillo / Pie",
+	"pie":          "Tobillo / Pie",
+	"talon":        "Tobillo / Pie",
+}
+
+func mensajeMenuZonas() string {
+	return "¿En qué zona tienes la lesión?\n\n" +
+		"- Cuello\n- Hombro\n- Brazo / Codo\n- Muñeca / Mano\n- Espalda baja / Core\n- Cadera\n- Rodilla\n- Tobillo / Pie\n\n" +
+		"Cuéntame la zona, o si ya sabes el diagnóstico dímelo directo."
+}
+
+// zonaDesdeTexto busca alguna palabra clave de zonaAliases dentro del texto
+// del paciente (sin tildes, minúsculas) y devuelve la zona canónica.
+func zonaDesdeTexto(texto string) (string, bool) {
+	t := sinTildes(strings.ToLower(texto))
+	for clave, zona := range zonaAliases {
+		if strings.Contains(t, sinTildes(clave)) {
+			return zona, true
+		}
+	}
+	return "", false
+}
+
+// resolverTextoDiagnostico intenta matchear el texto libre del paciente
+// contra el catálogo de diagnósticos del activities-service.
+func (r *Router) resolverTextoDiagnostico(texto string) (*client.Diagnostico, bool) {
+	if r.activities == nil || !r.activities.Disponible() || strings.TrimSpace(texto) == "" {
+		return nil, false
+	}
+	d, err := r.activities.BuscarPorDiagnostico(texto)
+	if err != nil || d == nil {
+		return nil, false
+	}
+	return d, true
+}
+
+// iniciarFlujoDiagnostico arranca (o retoma) el flujo de diagnóstico guiado.
+// Si textoDiagnostico viene vacío (ej. justo después de registrar peso/altura)
+// pregunta directamente por la zona. Si viene con texto (ej. el paciente ya
+// escribió su lesión), primero intenta matchear contra el catálogo.
+func (r *Router) iniciarFlujoDiagnostico(textoDiagnostico string, paciente *client.Patient) map[string]interface{} {
+	textoDiagnostico = strings.TrimSpace(textoDiagnostico)
+	if textoDiagnostico == "" {
+		return map[string]interface{}{
+			"respuesta":    mensajeMenuZonas(),
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+		}
+	}
+	if d, ok := r.resolverTextoDiagnostico(textoDiagnostico); ok {
+		return map[string]interface{}{
+			"respuesta": fmt.Sprintf("¿Quisiste decir %s?", d.Nombre),
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":     "confirmar_diagnostico_sugerido",
+				"diagnostico_sugerido": d.Nombre,
+			},
+		}
+	}
+	if zona, ok := zonaDesdeTexto(textoDiagnostico); ok {
+		return r.mostrarDiagnosticosDeZona(zona)
+	}
+	// Ni diagnóstico conocido ni zona reconocida: no bloqueamos al paciente,
+	// seguimos con el flujo anterior de crear la ficha con el texto tal cual.
+	return r.manejarCrearFicha(map[string]interface{}{"diagnostico": textoDiagnostico}, paciente)
+}
+
+// manejarEsperandoDiagnostico procesa la respuesta a "¿En qué zona tienes la lesión?"
+func (r *Router) manejarEsperandoDiagnostico(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	if texto == "" {
+		return map[string]interface{}{
+			"respuesta":    mensajeMenuZonas(),
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+		}
+	}
+	if d, ok := r.resolverTextoDiagnostico(texto); ok {
+		return map[string]interface{}{
+			"respuesta": fmt.Sprintf("¿Quisiste decir %s?", d.Nombre),
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":     "confirmar_diagnostico_sugerido",
+				"diagnostico_sugerido": d.Nombre,
+			},
+		}
+	}
+	if zona, ok := zonaDesdeTexto(texto); ok {
+		return r.mostrarDiagnosticosDeZona(zona)
+	}
+	return map[string]interface{}{
+		"respuesta":    "No reconocí esa zona. " + mensajeMenuZonas(),
+		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+	}
+}
+
+// mostrarDiagnosticosDeZona lista, numerados, los diagnósticos del catálogo
+// asociados a una zona para que el paciente elija respondiendo el número.
+func (r *Router) mostrarDiagnosticosDeZona(zona string) map[string]interface{} {
+	todos, err := r.activities.ObtenerTodos()
+	if err != nil {
+		log.Printf("[Diagnóstico] error obteniendo catálogo de activities-service: %v", err)
+		return map[string]interface{}{
+			"respuesta":    "Tuve un problema para buscar los diagnósticos de esa zona. Cuéntame directamente tu diagnóstico o lesión.",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+		}
+	}
+	var opciones []string
+	for _, d := range todos {
+		if d.Zona == zona {
+			opciones = append(opciones, d.Nombre)
+		}
+	}
+	if len(opciones) == 0 {
+		return map[string]interface{}{
+			"respuesta":    "No tengo diagnósticos cargados para esa zona todavía. Cuéntame directamente tu diagnóstico o lesión.",
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+		}
+	}
+	var sb strings.Builder
+	sb.WriteString("Estos son los diagnósticos asociados a esa zona:\n\n")
+	for i, nombre := range opciones {
+		sb.WriteString(fmt.Sprintf("%d. %s\n", i+1, nombre))
+	}
+	sb.WriteString("\nResponde con el número que corresponda a tu diagnóstico.")
+	return map[string]interface{}{
+		"respuesta": sb.String(),
+		"nueva_sesion": map[string]interface{}{
+			"accion_pendiente":     "esperando_eleccion_diagnostico",
+			"opciones_diagnostico": strings.Join(opciones, "|"),
+		},
+	}
+}
+
+// confirmarDiagnosticoSugerido procesa la respuesta a "¿Quisiste decir X?"
+func (r *Router) confirmarDiagnosticoSugerido(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	diagnostico := getString(sesion, "diagnostico_sugerido")
+	if esRespuestaNegativa(texto) {
+		return map[string]interface{}{
+			"respuesta":    "Ya, cuéntame entonces: " + mensajeMenuZonas(),
+			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
+		}
+	}
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
+}
+
+// manejarEleccionDiagnostico procesa la respuesta numérica al menú de
+// diagnósticos de una zona.
+func (r *Router) manejarEleccionDiagnostico(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	texto := getString(intent.Datos, "texto_original")
+	opciones := strings.Split(getString(sesion, "opciones_diagnostico"), "|")
+	seleccion := obtenerSeleccion(texto)
+	if seleccion == nil || *seleccion < 1 || *seleccion > len(opciones) {
+		return map[string]interface{}{
+			"respuesta": "No entendí. Responde con el número de la opción que corresponda a tu diagnóstico.",
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":     "esperando_eleccion_diagnostico",
+				"opciones_diagnostico": strings.Join(opciones, "|"),
+			},
+		}
+	}
+	diagnostico := opciones[*seleccion-1]
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
 }
