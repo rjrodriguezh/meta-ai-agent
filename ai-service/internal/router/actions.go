@@ -732,7 +732,7 @@ func (r *Router) manejarCrearFicha(datos map[string]interface{}, paciente *clien
 	}
 
 	sesiones := getIntFromMap(datos, "cantidad_sesiones", 10)
-	return r.verificarFichaActivaYCrear(paciente, diagnostico, sesiones)
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, sesiones, "")
 }
 
 // ladoAmbiguo detecta si el diagnóstico menciona una zona del cuerpo que
@@ -766,7 +766,7 @@ func ladoAmbiguo(diagnostico string) (string, bool) {
 // Ahora se distingue: solo se procede a crear directo si el error es
 // client.ErrNotFound (404 real). Cualquier otro error corta el flujo sin
 // crear nada, para no arriesgar fichas duplicadas.
-func (r *Router) verificarFichaActivaYCrear(paciente *client.Patient, diagnostico string, sesiones int) map[string]interface{} {
+func (r *Router) verificarFichaActivaYCrear(paciente *client.Patient, diagnostico string, sesiones int, observacion string) map[string]interface{} {
 	fichaActiva, err := r.patients.GetFichaActiva(paciente.ID)
 	if err != nil && !errors.Is(err, client.ErrNotFound) {
 		log.Printf("[Ficha] error verificando ficha activa de paciente %d (no se crea por seguridad): %v", paciente.ID, err)
@@ -784,13 +784,13 @@ func (r *Router) verificarFichaActivaYCrear(paciente *client.Patient, diagnostic
 			},
 		}
 	}
-	return r.crearFichaYPreguntarFonasa(paciente, diagnostico, sesiones)
+	return r.crearFichaYPreguntarFonasa(paciente, diagnostico, sesiones, observacion)
 }
 
 // crearFichaYPreguntarFonasa crea la ficha y encadena la pregunta obligatoria
 // de previsión (Bug #1e: antes no se preguntaba fonasa tras el diagnóstico).
-func (r *Router) crearFichaYPreguntarFonasa(paciente *client.Patient, diagnostico string, sesiones int) map[string]interface{} {
-	ficha, err := r.patients.CreateFicha(paciente.ID, diagnostico, sesiones)
+func (r *Router) crearFichaYPreguntarFonasa(paciente *client.Patient, diagnostico string, sesiones int, observacion string) map[string]interface{} {
+	ficha, err := r.patients.CreateFicha(paciente.ID, diagnostico, sesiones, observacion)
 	if err != nil {
 		return map[string]interface{}{"respuesta": "No pude crear la ficha.", "nueva_sesion": map[string]interface{}{}}
 	}
@@ -815,7 +815,7 @@ func (r *Router) manejarLadoDiagnostico(intent *model.Intent, sesion map[string]
 	} else {
 		diagnostico += " derecha"
 	}
-	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10, "")
 }
 
 // confirmarFichaNueva procesa la respuesta a "¿Es un tratamiento nuevo o quieres continuar con esa?"
@@ -823,7 +823,7 @@ func (r *Router) confirmarFichaNueva(intent *model.Intent, sesion map[string]int
 	texto := strings.ToLower(strings.TrimSpace(getString(intent.Datos, "texto_original")))
 	diagnostico := getString(sesion, "diagnostico_pendiente")
 	if strings.Contains(texto, "nuevo") || strings.Contains(texto, "otro") || strings.Contains(texto, "otra") {
-		return r.crearFichaYPreguntarFonasa(paciente, diagnostico, 10)
+		return r.crearFichaYPreguntarFonasa(paciente, diagnostico, 10, "")
 	}
 	return map[string]interface{}{
 		"respuesta":    "Oka, seguimos con tu ficha activa entonces.",
@@ -1199,22 +1199,7 @@ func (r *Router) manejarEsperandoAltura(intent *model.Intent, sesion map[string]
 			log.Printf("[Registro] error guardando altura de paciente %d: %v", paciente.ID, err)
 		}
 	}
-	// Justo antes de entrar al flujo de diagnóstico (y por lo tanto antes de
-	// crear la ficha) le recordamos traer la orden médica a la primera
-	// sesión y le pedimos que cuente qué le pasó — se muestra una sola vez,
-	// acá, no en cada reintento del menú de zonas.
-	resultado := r.iniciarFlujoDiagnostico("", paciente)
-	if resp, ok := resultado["respuesta"].(string); ok {
-		resultado["respuesta"] = mensajeRecordatorioOrdenMedica() + resp
-	}
-	return resultado
-}
-
-// mensajeRecordatorioOrdenMedica se antepone una sola vez, justo antes de
-// preguntar por la zona/diagnóstico, para pedir la orden médica y que el
-// paciente cuente qué le pasó.
-func mensajeRecordatorioOrdenMedica() string {
-	return "Cuando vengas a tu primera sesión, no olvides traer tu orden médica.\n\nAhora cuéntame, ¿qué te pasó y cuál es tu diagnóstico?\n\n"
+	return r.iniciarFlujoDiagnostico("", paciente)
 }
 
 // --- Diagnóstico guiado por zona ---
@@ -1382,7 +1367,10 @@ func (r *Router) mostrarDiagnosticosDeZona(zona string) map[string]interface{} {
 	}
 }
 
-// confirmarDiagnosticoSugerido procesa la respuesta a "¿Quisiste decir X?"
+// confirmarDiagnosticoSugerido procesa la respuesta a "¿Quisiste decir X?".
+// Al confirmar, todavía NO crea la ficha: primero pide el diagnóstico tal
+// como aparece en la orden médica y que el paciente cuente qué le pasó
+// (manejarEsperandoRelatoDiagnostico), y recién con eso se crea la ficha.
 func (r *Router) confirmarDiagnosticoSugerido(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
 	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
 	diagnostico := getString(sesion, "diagnostico_sugerido")
@@ -1392,7 +1380,31 @@ func (r *Router) confirmarDiagnosticoSugerido(intent *model.Intent, sesion map[s
 			"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_diagnostico"},
 		}
 	}
-	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
+	return map[string]interface{}{
+		"respuesta": "Escríbeme el diagnóstico tal como aparece en tu orden médica, y cuéntame un poco qué te pasó.",
+		"nueva_sesion": map[string]interface{}{
+			"accion_pendiente":       "esperando_relato_diagnostico",
+			"diagnostico_confirmado": diagnostico,
+		},
+	}
+}
+
+// manejarEsperandoRelatoDiagnostico recibe el diagnóstico de la orden médica
+// (texto libre del paciente) + el relato de qué le pasó, y con eso recién
+// crea la ficha — el relato queda guardado como observación de la ficha.
+func (r *Router) manejarEsperandoRelatoDiagnostico(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
+	relato := strings.TrimSpace(getString(intent.Datos, "texto_original"))
+	diagnostico := getString(sesion, "diagnostico_confirmado")
+	if relato == "" {
+		return map[string]interface{}{
+			"respuesta": "Escríbeme el diagnóstico tal como aparece en tu orden médica, y cuéntame un poco qué te pasó.",
+			"nueva_sesion": map[string]interface{}{
+				"accion_pendiente":       "esperando_relato_diagnostico",
+				"diagnostico_confirmado": diagnostico,
+			},
+		}
+	}
+	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10, relato)
 }
 
 // manejarEleccionDiagnostico procesa la respuesta numérica al menú de

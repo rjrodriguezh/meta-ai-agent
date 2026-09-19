@@ -187,6 +187,9 @@ func (r *Router) Ejecutar(numero string, intent *model.Intent, sesion map[string
 	if accionPendiente == "confirmar_diagnostico_sugerido" {
 		return r.confirmarDiagnosticoSugerido(intent, sesion, paciente)
 	}
+	if accionPendiente == "esperando_relato_diagnostico" {
+		return r.manejarEsperandoRelatoDiagnostico(intent, sesion, paciente)
+	}
 	if accionPendiente == "esperando_eleccion_diagnostico" {
 		return r.manejarEleccionDiagnostico(intent, sesion, paciente)
 	}

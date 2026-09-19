@@ -140,12 +140,15 @@ func (c *PatientsClient) GetFichaActiva(pacID uint) (*Ficha, error) {
 	return &f, nil
 }
 
-// CreateFicha — equivale a crear_ficha
-func (c *PatientsClient) CreateFicha(pacID uint, diagnostico string, sesiones int) (*Ficha, error) {
+// CreateFicha — equivale a crear_ficha. observacion es opcional (ej. el
+// relato del paciente de qué le pasó, capturado en el flujo de diagnóstico
+// guiado) — se puede mandar "" si no aplica.
+func (c *PatientsClient) CreateFicha(pacID uint, diagnostico string, sesiones int, observacion string) (*Ficha, error) {
 	var f Ficha
 	err := c.post(fmt.Sprintf("/patients/%d/fichas", pacID), map[string]interface{}{
-		"diagnostico":      diagnostico,
+		"diagnostico":       diagnostico,
 		"cantidad_sesiones": sesiones,
+		"observacion":       observacion,
 	}, &f)
 	return &f, err
 }
