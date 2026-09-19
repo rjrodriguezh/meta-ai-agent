@@ -1198,7 +1198,22 @@ func (r *Router) manejarEsperandoAltura(intent *model.Intent, sesion map[string]
 			log.Printf("[Registro] error guardando altura de paciente %d: %v", paciente.ID, err)
 		}
 	}
-	return r.iniciarFlujoDiagnostico("", paciente)
+	// Justo antes de entrar al flujo de diagnóstico (y por lo tanto antes de
+	// crear la ficha) le recordamos traer la orden médica a la primera
+	// sesión y le pedimos que cuente qué le pasó — se muestra una sola vez,
+	// acá, no en cada reintento del menú de zonas.
+	resultado := r.iniciarFlujoDiagnostico("", paciente)
+	if resp, ok := resultado["respuesta"].(string); ok {
+		resultado["respuesta"] = mensajeRecordatorioOrdenMedica() + resp
+	}
+	return resultado
+}
+
+// mensajeRecordatorioOrdenMedica se antepone una sola vez, justo antes de
+// preguntar por la zona/diagnóstico, para pedir la orden médica y que el
+// paciente cuente qué le pasó.
+func mensajeRecordatorioOrdenMedica() string {
+	return "Cuando vengas a tu primera sesión, no olvides traer tu orden médica.\n\nAhora cuéntame, ¿qué te pasó y cuál es tu diagnóstico?\n\n"
 }
 
 // --- Diagnóstico guiado por zona ---
