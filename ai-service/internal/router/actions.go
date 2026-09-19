@@ -794,7 +794,8 @@ func (r *Router) crearFichaYPreguntarFonasa(paciente *client.Patient, diagnostic
 	if err != nil {
 		return map[string]interface{}{"respuesta": "No pude crear la ficha.", "nueva_sesion": map[string]interface{}{}}
 	}
-	mensaje := fmt.Sprintf("Listo, ficha creada por %s (%d sesiones).", ficha.Diagnostico, ficha.CantidadSesiones)
+	mensaje := "Cuando agendes tu primera sesión, no olvides traer tu orden médica.\n\n"
+	mensaje += fmt.Sprintf("Listo, ficha creada por %s (%d sesiones).", ficha.Diagnostico, ficha.CantidadSesiones)
 	if d, ok := r.resolverTextoDiagnostico(ficha.Diagnostico); ok && len(d.Ejercicios) > 0 {
 		mensaje += fmt.Sprintf(" Incluye %d ejercicios que te iré enviando para que hagas en casa.", len(d.Ejercicios))
 	}
