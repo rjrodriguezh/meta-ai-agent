@@ -1376,5 +1376,14 @@ func (r *Router) manejarEleccionDiagnostico(intent *model.Intent, sesion map[str
 		}
 	}
 	diagnostico := opciones[*seleccion-1]
-	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10)
+	// Confirmamos antes de crear, igual que cuando el diagnóstico se detecta
+	// por texto libre — reutiliza confirmarDiagnosticoSugerido (Sí -> crea,
+	// No -> vuelve al menú de zonas).
+	return map[string]interface{}{
+		"respuesta": fmt.Sprintf("¿Quisiste decir %s?", diagnostico),
+		"nueva_sesion": map[string]interface{}{
+			"accion_pendiente":     "confirmar_diagnostico_sugerido",
+			"diagnostico_sugerido": diagnostico,
+		},
+	}
 }
