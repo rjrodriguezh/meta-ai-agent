@@ -76,6 +76,19 @@ func main() {
 	app.Get("/config/bot", botCfgH.Get)
 	app.Put("/config/bot", botCfgH.Update)
 
+	// --- Admin: reset total (borra TODOS los pacientes y fichas) ---
+	// Usado por el botón de "resetear datos" del dashboard para poder probar
+	// el bot como usuario nuevo sin tocar la base de datos a mano.
+	app.Post("/admin/reset", func(c *fiber.Ctx) error {
+		if err := db.Exec("DELETE FROM fichas").Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "no se pudo borrar fichas: " + err.Error()})
+		}
+		if err := db.Exec("DELETE FROM pacientes").Error; err != nil {
+			return c.Status(500).JSON(fiber.Map{"error": "no se pudo borrar pacientes: " + err.Error()})
+		}
+		return c.JSON(fiber.Map{"status": "ok", "mensaje": "pacientes y fichas eliminados"})
+	})
+
 	// Puerto
 	port := os.Getenv("PATIENTS_PORT")
 	if port == "" {

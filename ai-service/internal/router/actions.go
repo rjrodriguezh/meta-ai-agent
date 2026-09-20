@@ -1169,22 +1169,28 @@ func (r *Router) manejarEsperandoRut(intent *model.Intent, sesion map[string]int
 		log.Printf("[Registro] error guardando RUT de paciente %d: %v", paciente.ID, err)
 	}
 	return map[string]interface{}{
-		"respuesta":    "¿Cuál es tu peso? (opcional, puedes responder \"no\" para omitirlo)",
+		"respuesta":    "Gracias por la información.\n\n¿Cuál es tu peso? (opcional, puedes responder \"no\" para omitirlo)",
 		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_peso"},
 	}
 }
 
 // manejarEsperandoPeso guarda el peso si el paciente lo entrega, o lo omite
-// si responde negativamente — en ambos casos sigue con altura.
+// si responde negativamente — en ambos casos sigue con altura. El "gracias"
+// solo se agrega si realmente entregó un dato (no cuando dice "no").
 func (r *Router) manejarEsperandoPeso(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
 	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
-	if texto != "" && !esRespuestaNegativa(texto) {
+	dioInfo := texto != "" && !esRespuestaNegativa(texto)
+	if dioInfo {
 		if err := r.patients.SetPeso(paciente.ID, texto); err != nil {
 			log.Printf("[Registro] error guardando peso de paciente %d: %v", paciente.ID, err)
 		}
 	}
+	pregunta := "¿Cuál es tu altura? (opcional, puedes responder \"no\" para omitirla)"
+	if dioInfo {
+		pregunta = "Gracias por la información.\n\n" + pregunta
+	}
 	return map[string]interface{}{
-		"respuesta":    "¿Cuál es tu altura? (opcional, puedes responder \"no\" para omitirla)",
+		"respuesta":    pregunta,
 		"nueva_sesion": map[string]interface{}{"accion_pendiente": "esperando_altura"},
 	}
 }
@@ -1194,12 +1200,19 @@ func (r *Router) manejarEsperandoPeso(intent *model.Intent, sesion map[string]in
 // muestra el menú de zonas).
 func (r *Router) manejarEsperandoAltura(intent *model.Intent, sesion map[string]interface{}, paciente *client.Patient) map[string]interface{} {
 	texto := strings.TrimSpace(getString(intent.Datos, "texto_original"))
-	if texto != "" && !esRespuestaNegativa(texto) {
+	dioInfo := texto != "" && !esRespuestaNegativa(texto)
+	if dioInfo {
 		if err := r.patients.SetAltura(paciente.ID, texto); err != nil {
 			log.Printf("[Registro] error guardando altura de paciente %d: %v", paciente.ID, err)
 		}
 	}
-	return r.iniciarFlujoDiagnostico("", paciente)
+	resultado := r.iniciarFlujoDiagnostico("", paciente)
+	if dioInfo {
+		if resp, ok := resultado["respuesta"].(string); ok {
+			resultado["respuesta"] = "Gracias por la información.\n\n" + resp
+		}
+	}
+	return resultado
 }
 
 // --- Diagnóstico guiado por zona ---
@@ -1313,7 +1326,7 @@ func (r *Router) manejarEsperandoDiagnostico(intent *model.Intent, sesion map[st
 	}
 	if d, ok := r.resolverTextoDiagnostico(texto); ok {
 		return map[string]interface{}{
-			"respuesta": fmt.Sprintf("¿Quisiste decir %s?", d.Nombre),
+			"respuesta": fmt.Sprintf("Gracias por la información.\n\n¿Quisiste decir %s?", d.Nombre),
 			"nueva_sesion": map[string]interface{}{
 				"accion_pendiente":     "confirmar_diagnostico_sugerido",
 				"diagnostico_sugerido": d.Nombre,
@@ -1321,7 +1334,11 @@ func (r *Router) manejarEsperandoDiagnostico(intent *model.Intent, sesion map[st
 		}
 	}
 	if zona, ok := zonaDesdeTexto(texto); ok {
-		return r.mostrarDiagnosticosDeZona(zona)
+		resultado := r.mostrarDiagnosticosDeZona(zona)
+		if resp, ok := resultado["respuesta"].(string); ok {
+			resultado["respuesta"] = "Gracias por la información.\n\n" + resp
+		}
+		return resultado
 	}
 	return map[string]interface{}{
 		"respuesta":    "No reconocí esa zona. " + mensajeMenuZonas(),
@@ -1404,7 +1421,11 @@ func (r *Router) manejarEsperandoRelatoDiagnostico(intent *model.Intent, sesion 
 			},
 		}
 	}
-	return r.verificarFichaActivaYCrear(paciente, diagnostico, 10, relato)
+	resultado := r.verificarFichaActivaYCrear(paciente, diagnostico, 10, relato)
+	if resp, ok := resultado["respuesta"].(string); ok {
+		resultado["respuesta"] = "Gracias por la información.\n\n" + resp
+	}
+	return resultado
 }
 
 // manejarEleccionDiagnostico procesa la respuesta numérica al menú de
