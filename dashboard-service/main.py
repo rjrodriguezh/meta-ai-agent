@@ -333,7 +333,7 @@ def nav():
                     <a href="/configuracion/bot" class="drop-item">⚙ Configurar personalidad</a>
                     <div class="drop-divider"></div>
                     <div class="drop-label">⚙ Administración</div>
-                    <a href="/admin" class="drop-item">🗑 Resetear datos de prueba</a>
+                    <a href="/reset" class="drop-item">🗑 Reset</a>
                 </div>
             </div>
 
@@ -3196,38 +3196,32 @@ def bot_config_save(persona: str = Form(...)):
     return RedirectResponse(url="/configuracion/bot?saved=1", status_code=303)
 
 
-# ── admin: reset total (para probar el bot como usuario nuevo) ─────────────
+# ── reset total (para probar el bot como usuario nuevo) ────────────────────
 
-@app.get("/admin", response_class=HTMLResponse)
-def admin_page(notif: str = Query("")):
+@app.get("/reset", response_class=HTMLResponse)
+def reset_page(notif: str = Query("")):
     notif_html = _notif_banner(notif)
     html = f"""
     {notif_html}
-    <h1>⚙ Administración</h1>
+    <h1>🗑 Reset</h1>
     <div class="form-card" style="max-width:560px;border:2px solid #fecaca">
-        <h2 style="color:#b91c1c;margin-top:0">🗑 Zona de peligro</h2>
+        <h2 style="color:#b91c1c;margin-top:0">Borrar todos los datos de prueba</h2>
         <p style="color:#555;font-size:14px">
             Esto elimina <b>TODOS</b> los pacientes, fichas y citas de la base de datos
-            (no solo los de prueba). Úsalo solo para dejar el sistema limpio y poder
+            (no solo los de prueba). Úsalo para dejar el sistema limpio y poder
             probar el bot de WhatsApp desde cero, como si fueras un paciente nuevo.
         </p>
         <p style="color:#991b1b;font-size:13px;font-weight:600">Esta acción no se puede deshacer.</p>
-        <form method="post" action="/admin/reset-todo" onsubmit="return confirmarReset()">
-            <button type="submit" class="btn btn-danger">🗑 Borrar TODOS los pacientes, fichas y citas</button>
+        <form method="post" action="/reset/ejecutar" onsubmit="return confirm('¿Seguro que quieres borrar TODOS los pacientes, fichas y citas?')">
+            <button type="submit" class="btn btn-danger">🗑 Borrar todo y resetear</button>
         </form>
     </div>
-    <script>
-    function confirmarReset() {{
-        const texto = prompt('Esto borrará TODOS los pacientes, fichas y citas de la base de datos.\\n\\nEscribe BORRAR TODO para confirmar:');
-        return texto === 'BORRAR TODO';
-    }}
-    </script>
     """
-    return HTMLResponse(layout("⚙ Administración", html))
+    return HTMLResponse(layout("🗑 Reset", html))
 
 
-@app.post("/admin/reset-todo")
-def admin_reset_todo():
+@app.post("/reset/ejecutar")
+def reset_ejecutar():
     errores = []
     try:
         r = requests.post(f"{PATIENTS_URL}/admin/reset", timeout=10)
@@ -3246,7 +3240,7 @@ def admin_reset_todo():
         notif = "⚠️ Error al resetear: " + "; ".join(errores)
     else:
         notif = "✅ Listo: se borraron todos los pacientes, fichas y citas."
-    return RedirectResponse(url=f"/admin?notif={quote(notif)}", status_code=303)
+    return RedirectResponse(url=f"/reset?notif={quote(notif)}", status_code=303)
 
 
 # ── internal: notificacion de email (llamado desde ai-service / Go) ────────
